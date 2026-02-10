@@ -1,0 +1,7 @@
+{
+    "require": {
+        "cboden/ratchet": "^0.4.4",
+        "react/http": "^1.9",
+        "minishlink/web-push": "^6.0"
+    }
+}

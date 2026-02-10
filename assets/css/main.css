@@ -1,0 +1,1181 @@
+/* Основные стили мессенджера */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --primary-color: #0088cc;
+    --primary-dark: #006699;
+    --secondary-color: #f0f0f0;
+    --text-color: #333;
+    --text-light: #666;
+    --border-color: #ddd;
+    --bg-color: #fff;
+    --bg-light: #f9f9f9;
+    --success-color: #28a745;
+    --error-color: #dc3545;
+    --shadow: 0 2px 4px rgba(0,0,0,0.1);
+    --shadow-lg: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: var(--text-color);
+    background-color: var(--bg-light);
+    line-height: 1.55;
+}
+
+/* Навигация */
+.main-nav {
+    background-color: var(--bg-color);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.3rem 0;
+    box-shadow: var(--shadow);
+}
+
+.nav-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.nav-logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.nav-user {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    padding: 0.35rem 0.5rem;
+    border-radius: 8px;
+    transition: background-color 0.2s;
+}
+.nav-user:hover {
+    background-color: var(--secondary-color);
+}
+
+.nav-logout {
+    color: var(--text-light);
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.nav-logout:hover {
+    background-color: var(--secondary-color);
+}
+
+.nav-profile-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0.25rem 0.5rem;
+    color: var(--text-light);
+    border-radius: 4px;
+}
+
+.nav-profile-btn:hover {
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+}
+
+/* Индикатор режима обновления (WebSocket / Polling) */
+.connection-status {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.connection-status:empty {
+    display: none;
+}
+.connection-status--ws {
+    background-color: rgba(40, 167, 69, 0.15);
+    color: var(--success-color);
+}
+.connection-status--polling {
+    background-color: rgba(108, 117, 125, 0.15);
+    color: var(--text-light);
+}
+.connection-status--connecting {
+    background-color: rgba(0, 136, 204, 0.12);
+    color: var(--primary-color);
+}
+
+.nav-avatar-wrap {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.nav-avatar,
+.profile-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.nav-avatar-placeholder,
+.profile-avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary-color);
+    color: white;
+    font-weight: bold;
+    font-size: 1rem;
+}
+
+.profile-avatar-section {
+    margin-bottom: 1rem;
+}
+
+.profile-avatar-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.profile-avatar-wrap {
+    width: 120px;
+    height: 120px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--secondary-color);
+    border: 4px solid #ddd;
+}
+
+.profile-avatar-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.btn-avatar-upload {
+    cursor: pointer;
+}
+
+.profile-avatar-hint {
+    display: block;
+    color: var(--text-light);
+    font-size: 0.8rem;
+}
+
+.profile-divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 1rem 0;
+}
+
+/* Crop modal */
+.modal-crop {
+    z-index: 1100;
+}
+
+.modal-crop .modal-content {
+    max-width: 520px;
+}
+
+.modal-crop-body .crop-container {
+    width: 100%;
+    height: 300px;
+    background: var(--bg-light);
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+
+.modal-crop-body .crop-container img {
+    max-width: 100%;
+    display: block;
+}
+
+.crop-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+}
+
+.crop-actions .btn {
+    width: auto;
+}
+
+.crop-error {
+    margin-top: 1rem;
+}
+
+.modal-hint {
+    color: var(--text-light);
+    margin-bottom: 1rem;
+    font-size: 0.95rem;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.modal-actions .btn {
+    width: auto;
+}
+
+.btn-secondary {
+    background-color: var(--secondary-color);
+    color: var(--text-color);
+}
+
+.btn-secondary:hover {
+    background-color: var(--border-color);
+}
+
+.profile-section-title {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+}
+
+/* Тумблер уведомлений в профиле */
+.profile-notifications {
+    margin-top: 0.5rem;
+}
+.profile-notifications-label.profile-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+}
+.profile-notifications-label.disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+.profile-notifications-toggle-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+.profile-toggle-slider {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    background: var(--border-color);
+    border-radius: 24px;
+    transition: background 0.2s;
+}
+.profile-toggle-slider::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s;
+}
+.profile-notifications-toggle-input:checked + .profile-toggle-slider {
+    background: var(--success-color);
+}
+.profile-notifications-toggle-input:checked + .profile-toggle-slider::before {
+    transform: translateX(20px);
+}
+.profile-notifications-toggle-input:focus + .profile-toggle-slider {
+    box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.3);
+}
+.profile-notifications-text {
+    font-size: 0.95rem;
+    color: var(--text-color);
+}
+.profile-notifications-status {
+    margin: 0.5rem 0 0;
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
+.profile-connectors,
+.profile-connectors-actions {
+    margin-top: 0.5rem;
+}
+
+.profile-connectors-loading,
+.profile-connectors-empty {
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+.profile-connector-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.profile-connector-item:last-child {
+    border-bottom: none;
+}
+
+.profile-connector-name {
+    font-size: 0.95rem;
+}
+
+.profile-connectors-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.btn-oauth-small {
+    max-width: none;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+}
+
+.profile-password .form-group {
+    margin-bottom: 0.75rem;
+}
+
+.profile-password-status {
+    margin: 0 0 0.75rem;
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+.profile-error {
+    color: var(--error-color);
+    margin-top: 1rem;
+    font-size: 0.9rem;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+/* Аутентификация */
+.auth-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 1rem;
+}
+
+.auth-box {
+    background: var(--bg-color);
+    border-radius: 8px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: var(--shadow-lg);
+}
+
+.auth-box h1 {
+    margin-bottom: 1.5rem;
+    text-align: center;
+    color: var(--text-color);
+}
+
+/* join-call.php */
+.join-call-box {
+    max-width: 420px;
+}
+.join-call-loading {
+    text-align: center;
+    color: var(--text-light);
+    padding: 1rem 0;
+}
+.join-call-invite {
+    margin-bottom: 1.5rem;
+    color: var(--text-color);
+}
+.join-call-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.join-call-actions .btn {
+    width: 100%;
+}
+.join-call-guest-section {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+.join-call-guest-label {
+    margin-bottom: 0.75rem;
+    color: var(--text-light);
+    font-size: 0.95rem;
+}
+.join-call-guest-form .form-group {
+    margin-bottom: 1rem;
+}
+.join-call-guest-form .btn {
+    width: 100%;
+}
+
+/* call-room.php (гость в звонке) — стили как у панели группового звонка */
+.call-room-container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-color);
+}
+/* Неверная ссылка — центрированный бокс */
+.call-room-container .call-room-box {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    max-width: 400px;
+    margin: 0 auto;
+    width: 100%;
+}
+.call-room-box .call-room-title {
+    margin-bottom: 1rem;
+    text-align: center;
+}
+/* Полноэкранная панель звонка (как group-call-panel) */
+.call-room-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: var(--bg-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.call-room-panel--visible {
+    position: fixed;
+    transform: none;
+}
+.call-room-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.call-room-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-color);
+}
+.call-room-panel .call-room-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text-color);
+    margin: 0;
+}
+.call-room-duration {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    min-width: 3rem;
+    color: var(--text-light);
+}
+.call-room-content {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+    background: #0d0d0d;
+}
+.call-room-status {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9375rem;
+    z-index: 1;
+    pointer-events: none;
+}
+.call-room-video-wrap {
+    position: absolute;
+    inset: 0;
+}
+.call-room-video-area {
+    position: absolute;
+    inset: 0;
+}
+.call-room-grid {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-auto-rows: minmax(120px, 1fr);
+    gap: 0.5rem;
+    padding: 0.5rem;
+    align-content: center;
+    justify-content: center;
+}
+.call-room-remote-slot {
+    position: relative;
+    min-height: 120px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+}
+.call-room-remote-slot video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.call-room-remote-slot-name {
+    position: absolute;
+    bottom: 6px;
+    left: 8px;
+    font-size: 0.8rem;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+    max-width: calc(100% - 12px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.call-room-local-pip-wrap {
+    position: absolute;
+    z-index: 2;
+    width: 160px;
+    height: 120px;
+    right: 1rem;
+    bottom: 1rem;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+.call-room-local-pip-wrap video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+}
+.call-room-local-label {
+    position: absolute;
+    bottom: 4px;
+    left: 8px;
+    font-size: 0.8rem;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+}
+.call-room-local-pip-wrap .btn-call-switch-camera-on-pip {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3;
+}
+.call-room-local-pip-wrap .btn-call-switch-camera-on-pip:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+/* Панель действий — как у call-panel-actions-bar / group-call-actions-bar */
+.call-room-actions-bar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-color);
+}
+.call-room-actions-left,
+.call-room-actions-right {
+    flex-shrink: 0;
+    min-width: 0;
+    max-width: 33%;
+}
+.call-room-actions-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    flex: 1;
+    min-width: 0;
+}
+.call-room-actions-group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.call-room-actions-group + .call-room-actions-group {
+    margin-left: 0;
+    padding-left: 0.75rem;
+    border-left: 1px solid var(--border-color);
+}
+.call-room-panel .btn-call-toggle,
+.call-room-panel .btn-call-hangup {
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    transition: background-color 0.15s, opacity 0.15s;
+    flex-shrink: 0;
+    background: var(--border-color);
+    color: inherit;
+}
+.call-room-panel .btn-call-hangup {
+    background: #c62828;
+    color: #fff;
+}
+.call-room-panel .btn-call-toggle:hover,
+.call-room-panel .btn-call-hangup:hover {
+    opacity: 0.9;
+}
+.call-room-panel .btn-call-toggle.btn-call-off {
+    opacity: 0.6;
+}
+.call-room-panel .btn-call-hangup:hover {
+    background: #b71c1c;
+}
+/* Подписи кнопок в десктопном режиме (call-room) */
+.call-room-panel .btn-call-label {
+    display: none;
+}
+@media (min-width: 768px) {
+    .call-room-panel .btn-call-label {
+        display: inline;
+        font-size: 0.8125rem;
+        white-space: nowrap;
+    }
+    .call-room-panel .call-room-actions-group .btn-call-toggle:not(.call-room-switch-camera) {
+        width: auto;
+        padding-left: 0.65rem;
+        padding-right: 0.65rem;
+        border-radius: 22px;
+    }
+    .call-room-panel .btn-call-hangup {
+        width: 44px;
+        padding: 0;
+    }
+}
+/* Блок регистрации в левой части панели действий */
+.call-room-actions-left .call-room-register {
+    /* display: flex; */
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.8125rem;
+    color: var(--text-light);
+}
+.call-room-register-text {
+    margin: 0;
+}
+.call-room-register-link {
+    color: var(--primary-color);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.call-room-register-link:hover {
+    text-decoration: underline;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.form-group input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.form-group small {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--text-light);
+    font-size: 0.875rem;
+}
+
+.btn {
+    display: inline-block;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    text-align: center;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+    width: 100%;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-dark);
+}
+
+.btn-danger {
+    background-color: #c0392b;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #a93226;
+}
+
+.profile-section-danger {
+    color: #c0392b;
+}
+
+.profile-logout-section {
+    margin: 0.25rem 0;
+}
+
+.profile-logout-section .profile-logout-btn {
+    text-decoration: none;
+}
+
+.profile-delete-account .form-group {
+    margin-bottom: 0.75rem;
+}
+
+.alert {
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.alert-error {
+    background-color: #fee;
+    color: var(--error-color);
+    border: 1px solid #fcc;
+}
+
+.alert-success {
+    background-color: #efe;
+    color: var(--success-color);
+    border: 1px solid #cfc;
+}
+
+.auth-link {
+    text-align: center;
+    margin-top: 1.5rem;
+    color: var(--text-light);
+}
+
+.auth-link a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.auth-link a:hover {
+    text-decoration: underline;
+}
+
+/* OAuth-кнопки на страницах входа/регистрации */
+.auth-oauth {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.auth-oauth-divider {
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+.btn-oauth {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    text-decoration: none;
+    border: 1px solid var(--border-color);
+    background: var(--bg-color);
+    color: var(--text-color);
+    width: 100%;
+    max-width: 280px;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-oauth:hover {
+    background: var(--bg-hover);
+    border-color: var(--text-light);
+}
+
+.btn-oauth-google:hover {
+    background: #f8f8f8;
+    border-color: #dadce0;
+}
+
+.btn-oauth-yandex:hover {
+    background: #fff8e6;
+    border-color: #fc0;
+}
+
+/* Модальные окна */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-color);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow: auto;
+    box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-light);
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-close:hover {
+    color: var(--text-color);
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+/* Профиль: боковая навигация */
+.profile-modal-content {
+    max-width: 720px;
+    width: 95%;
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh;
+}
+
+.profile-modal-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.profile-sidebar {
+    width: 200px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-color);
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.profile-sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+    min-height: 0;
+}
+
+.profile-sidebar-footer {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.profile-sidebar-footer .profile-logout-btn {
+    width: 100%;
+    text-align: center;
+}
+
+.profile-nav-item {
+    display: block;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    text-align: left;
+    font-size: 0.95rem;
+    color: var(--text-color);
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.profile-nav-item:hover {
+    background-color: var(--secondary-color);
+}
+
+.profile-nav-item.active {
+    background-color: rgba(0, 136, 204, 0.12);
+    color: var(--primary-color);
+}
+
+.profile-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.5rem;
+    position: relative;
+}
+
+.profile-content-header {
+    display: none;
+}
+
+.profile-section-back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.profile-section-back svg {
+    width: 1.25em;
+    height: 1.25em;
+}
+
+.profile-section-back:hover {
+    background: var(--secondary-color);
+}
+
+.profile-section-back:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.profile-section-title-header {
+    flex: 1;
+    margin: 0;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+}
+
+.profile-section {
+    display: none;
+}
+
+.profile-section.active {
+    display: block;
+}
+
+.profile-login-row .profile-login-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.profile-login-row .profile-login-input-wrap input {
+    flex: 1;
+    min-width: 150px;
+}
+
+.profile-login-row .profile-login-input-wrap input.readonly {
+    background-color: var(--bg-light);
+}
+
+.profile-login-row .profile-login-input-wrap .btn-icon {
+    padding: 0.5rem;
+    min-width: 36px;
+}
+
+.profile-login-row .profile-login-input-wrap .profile-login-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.profile-delete-history-section {
+    margin: 1rem 0;
+}
+
+.profile-delete-history-section .modal-hint {
+    margin-top: 0.5rem;
+}
+
+/* Мобильный: sidebar как отдельный экран */
+@media (max-width: 768px) {
+    .main-nav {
+        padding: 0.174rem 0;
+    }
+
+    .profile-modal-content {
+        max-width: 100%;
+        width: 100%;
+        height: 100%;
+        max-height: 100%;
+        border-radius: 0;
+    }
+
+    .profile-modal-body {
+        flex-direction: column;
+    }
+
+    .profile-sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        padding: 1rem;
+    }
+
+    .profile-content {
+        padding: 0;
+    }
+
+    /* По умолчанию на мобильном: sidebar как меню, content скрыт */
+    .profile-modal-body:not(.profile-mobile-content-open) .profile-content {
+        display: none;
+    }
+
+    /* При выборе секции: content на весь экран, sidebar скрыт */
+    .profile-modal-body.profile-mobile-content-open .profile-sidebar {
+        display: none;
+    }
+
+    .profile-modal-body.profile-mobile-content-open .profile-content {
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Заголовок с кнопкой назад и названием секции на одном уровне */
+    .profile-modal-body.profile-mobile-content-open .profile-content-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding-bottom: 1rem;
+        margin-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .profile-modal-body.profile-mobile-content-open .profile-section-title-desktop {
+        display: none;
+    }
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .auth-box {
+        padding: 1.5rem;
+    }
+    
+    .nav-container {
+        padding: 0 0.5rem;
+    }
+    
+    .nav-logo {
+        font-size: 1.25rem;
+    }
+
+    .nav-user {
+        padding: 0.25rem 0.35rem;
+    }
+}

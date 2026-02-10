@@ -1,0 +1,54 @@
+# Загруженные файлы
+uploads/*
+!uploads/.gitkeep
+
+# Конфигурация с секретами (не публиковать на GitHub)
+config/config.php
+config/database.php
+config/*.local.php
+config/reset_admin_password.php
+config/e2ee_key_backup.php
+
+# Отладочные и опасные файлы
+test/phpinfo.php
+
+# Логи
+*.log
+
+# WebSocket: PID и лог в папке websocket/ (и устаревшие в корне)
+websocket-server.pid
+websocket/server.pid
+websocket/server.log
+
+# Временные файлы
+*.tmp
+*.temp
+*.swn
+
+# Переменные окружения
+.env
+.env.local
+.env.*
+
+# Локальные инструкции и действия
+tools/common-actions.md
+
+# Планы (не публиковать в общий доступ)
+docs/plans/*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules (если будут использоваться)
+node_modules/
+
+# Composer (не коммитить в публичный репозиторий)
+composer.phar

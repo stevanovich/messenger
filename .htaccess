@@ -1,0 +1,58 @@
+# Настройки для Apache
+# Главная страница — index.php (важно для доступа по URL без имени файла, иначе возможен 403)
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+# Если приложение в подкаталоге (например /sites/messenger/), раскомментируйте и укажите путь:
+# RewriteBase /sites/messenger/
+
+# Редирект на index.php если файл не существует
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/(.*)$ api/$1 [L]
+</IfModule>
+
+# Запрет листинга каталогов (при отсутствии index может давать 403)
+<IfModule mod_autoindex.c>
+Options -Indexes
+</IfModule>
+
+# Запрет доступа к тестовым скриптам на продакшене (раскрывают структуру БД/сессии)
+<IfModule mod_rewrite.c>
+RewriteRule ^test/ - [F,L]
+</IfModule>
+
+# Защита конфигурационных файлов (Apache 2.4)
+<FilesMatch "^(config|includes|sql)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Защита .htaccess
+<Files .htaccess>
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Настройки PHP
+php_value upload_max_filesize 10M
+php_value post_max_size 10M
+
+# Кодировка по умолчанию
+AddDefaultCharset UTF-8
+
+# Кэширование статических файлов
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+</IfModule>

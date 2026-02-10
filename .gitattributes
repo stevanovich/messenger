@@ -1,0 +1,2 @@
+# Shell scripts: всегда LF (Unix), чтобы на NAS/Linux не было "bad interpreter"
+*.sh text eol=lf
