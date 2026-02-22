@@ -48,7 +48,7 @@ include __DIR__ . '/header.php';
                     <?php
                     $visible = isset($u['visible_in_contacts']) ? (int)$u['visible_in_contacts'] : 1;
                     ?>
-                    <button type="button" class="admin-btn-toggle-contacts <?= $visible ? 'is-visible' : 'is-hidden' ?>" data-uuid="<?= escape($u['uuid']) ?>" data-visible="<?= $visible ?>" title="<?= $visible ? 'Скрыть из контактов' : 'Показать в контактах' ?>">
+                    <button type="button" class="admin-btn-toggle-contacts<?= $visible ? ' is-visible' : '' ?>" data-uuid="<?= escape($u['uuid']) ?>" data-visible="<?= $visible ?>" title="<?= $visible ? 'Скрыть из контактов' : 'Показать в контактах' ?>">
                         <?= $visible ? 'Да' : 'Нет' ?>
                     </button>
                 </td>
@@ -115,7 +115,6 @@ include __DIR__ . '/header.php';
                     btn.dataset.visible = String(nextVisible);
                     btn.textContent = nextVisible === 1 ? 'Да' : 'Нет';
                     btn.classList.toggle('is-visible', nextVisible === 1);
-                    btn.classList.toggle('is-hidden', nextVisible === 0);
                     btn.title = nextVisible === 1 ? 'Скрыть из контактов' : 'Показать в контактах';
                 } else {
                     alert(data.error || 'Ошибка');

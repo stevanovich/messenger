@@ -99,29 +99,55 @@ document.addEventListener('click', (e) => {
     }).then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
 });
 
+// Локализованные строки для времени/даты/статуса (подставляются из window.__LANG__)
+function getLANG() {
+    return (typeof window !== 'undefined' && window.__LANG__) || {
+        localeIntl: 'ru-RU',
+        time: { just_now: 'только что', ago: 'назад', minute_forms: ['минуту', 'минуты', 'минут'], hour_forms: ['час', 'часа', 'часов'], day_forms: ['день', 'дня', 'дней'] },
+        date: { today: 'Сегодня', yesterday: 'Вчера' },
+        status: { online: 'онлайн', offline: 'офлайн', was: 'был(а) %s' },
+    };
+}
+function lang(section, key, fallback) {
+    const S = typeof window !== 'undefined' && window.__LANG__ && window.__LANG__[section];
+    return (S && S[key] !== undefined && S[key] !== '') ? S[key] : (fallback || '');
+}
+
+function pluralize(number, forms) {
+    if (!forms || forms.length < 3) return forms ? forms[0] : '';
+    const cases = [2, 0, 1, 1, 1, 2];
+    return forms[(number % 100 > 4 && number % 100 < 20) ? 2 : cases[Math.min(number % 10, 5)]];
+}
+
 // Утилита для форматирования времени (относительное: «5 мин назад» и т.д.)
 function formatTime(dateString) {
     if (!dateString) return '';
-    
+    const L = getLANG();
     const date = new Date(dateString);
     const now = new Date();
     const diff = now - date;
-    
     const seconds = Math.floor(diff / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
-    
+    const locale = L.localeIntl || 'ru-RU';
+    var withAgoPrefix = L.time && L.time.ago_prefix && String(L.time.ago_prefix).trim() !== '';
     if (seconds < 60) {
-        return 'только что';
+        return L.time.just_now || 'только что';
     } else if (minutes < 60) {
-        return `${minutes} ${pluralize(minutes, ['минуту', 'минуты', 'минут'])} назад`;
+        const forms = L.time.minute_forms || ['минуту', 'минуты', 'минут'];
+        const part = `${minutes} ${pluralize(minutes, forms)}`;
+        return withAgoPrefix ? `${L.time.ago_prefix} ${part}` : `${part} ${L.time.ago || 'назад'}`;
     } else if (hours < 24) {
-        return `${hours} ${pluralize(hours, ['час', 'часа', 'часов'])} назад`;
+        const forms = L.time.hour_forms || ['час', 'часа', 'часов'];
+        const part = `${hours} ${pluralize(hours, forms)}`;
+        return withAgoPrefix ? `${L.time.ago_prefix} ${part}` : `${part} ${L.time.ago || 'назад'}`;
     } else if (days < 7) {
-        return `${days} ${pluralize(days, ['день', 'дня', 'дней'])} назад`;
+        const forms = L.time.day_forms || ['день', 'дня', 'дней'];
+        const part = `${days} ${pluralize(days, forms)}`;
+        return withAgoPrefix ? `${L.time.ago_prefix} ${part}` : `${part} ${L.time.ago || 'назад'}`;
     } else {
-        return date.toLocaleDateString('ru-RU', {
+        return date.toLocaleDateString(locale, {
             day: '2-digit',
             month: '2-digit',
             year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
@@ -135,37 +161,36 @@ function formatTime(dateString) {
 function formatMessageTime(dateString) {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const locale = getLANG().localeIntl || 'ru-RU';
+    return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 /** Дата для разделителя в чате: «05 февраля» или «05 февраля 2026» (год только если не текущий) */
 function formatMessageDateFull(dateString) {
     if (!dateString) return '';
     const date = new Date(dateString);
+    const locale = getLANG().localeIntl || 'ru-RU';
     const opts = { day: '2-digit', month: 'long' };
     if (date.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-    return date.toLocaleDateString('ru-RU', opts);
+    return date.toLocaleDateString(locale, opts);
 }
 
 /** Дата для плавающего блока при скролле: «Сегодня», «Вчера» или «5 февраля» */
 function formatMessageDate(dateString) {
     if (!dateString) return '';
+    const L = getLANG();
     const date = new Date(dateString);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    if (d.getTime() === today.getTime()) return 'Сегодня';
-    if (d.getTime() === yesterday.getTime()) return 'Вчера';
+    if (d.getTime() === today.getTime()) return L.date.today || 'Сегодня';
+    if (d.getTime() === yesterday.getTime()) return L.date.yesterday || 'Вчера';
+    const locale = L.localeIntl || 'ru-RU';
     const opts = { day: 'numeric', month: 'long' };
     if (date.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
-    return date.toLocaleDateString('ru-RU', opts);
-}
-
-function pluralize(number, forms) {
-    const cases = [2, 0, 1, 1, 1, 2];
-    return forms[(number % 100 > 4 && number % 100 < 20) ? 2 : cases[Math.min(number % 10, 5)]];
+    return date.toLocaleDateString(locale, opts);
 }
 
 // Порог «онлайн» в миллисекундах (5 минут)
@@ -177,12 +202,15 @@ const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
  * @returns {string} "онлайн" | "был(а) X" | "офлайн"
  */
 function getActivityStatus(lastSeen) {
-    if (!lastSeen) return 'офлайн';
+    const L = getLANG();
+    const status = L.status || {};
+    if (!lastSeen) return status.offline || 'офлайн';
     const date = new Date(lastSeen);
     const diff = Date.now() - date.getTime();
-    if (diff < 0) return 'офлайн';
-    if (diff < ONLINE_THRESHOLD_MS) return 'онлайн';
-    return `был(а) ${formatTime(lastSeen)}`;
+    if (diff < 0) return status.offline || 'офлайн';
+    if (diff < ONLINE_THRESHOLD_MS) return status.online || 'онлайн';
+    const wasTpl = status.was || 'был(а) %s';
+    return wasTpl.replace('%s', formatTime(lastSeen));
 }
 
 // Утилита для API запросов. options.timeoutMs — таймаут в мс (по умолчанию без ограничения; для отправки сообщений лучше задать 60000).
@@ -221,8 +249,8 @@ async function apiRequest(url, options = {}) {
         if (!response.ok) {
             const errMsg = (data && data.error) || extractErrorFromBody(text) || (text && text.length < 300 ? text.replace(/\s+/g, ' ').trim() : null);
             const msg = response.status === 409
-                ? 'В этой беседе уже идёт групповой звонок. Присоединяйтесь.'
-                : (errMsg || 'Ошибка сервера: ' + response.status);
+                ? (typeof lang === 'function' ? lang('chat', 'group_call_already', 'В этой беседе уже идёт групповой звонок. Присоединяйтесь.') : 'В этой беседе уже идёт групповой звонок. Присоединяйтесь.')
+                : (errMsg || (typeof lang === 'function' ? lang('common', 'error', 'Ошибка') : 'Ошибка') + ': ' + response.status);
             const err = new Error(msg);
             err.responseText = text;
             err.status = response.status;
@@ -237,7 +265,7 @@ async function apiRequest(url, options = {}) {
             console.error('API request error:', error);
         }
         if (error.name === 'AbortError' && timeoutMs > 0) {
-            throw new Error('Сервер не ответил вовремя. Проверьте интернет и попробуйте снова.');
+            throw new Error(typeof lang === 'function' ? lang('app', 'server_timeout', 'Сервер не ответил вовремя. Проверьте интернет и попробуйте снова.') : 'Сервер не ответил вовремя. Проверьте интернет и попробуйте снова.');
         }
         throw error;
     }
@@ -337,23 +365,20 @@ function initProfileModal() {
     }
 
     const profileSectionTitleHeader = document.getElementById('profileSectionTitleHeader');
-    const sectionTitles = {
-        personal: 'Личная информация',
-        contacts: 'Контакты',
-        auth: 'Аутентификация',
-        notifications: 'Уведомления',
-        account: 'Управление учётной записью'
-    };
 
     function switchSection(section) {
         modal.querySelectorAll('.profile-nav-item').forEach(el => {
-            el.classList.toggle('active', el.dataset.section === section);
+            const isActive = el.dataset.section === section;
+            el.classList.toggle('active', isActive);
+            if (isActive && profileSectionTitleHeader && el.dataset.sectionTitle) {
+                profileSectionTitleHeader.textContent = el.dataset.sectionTitle;
+            }
         });
         modal.querySelectorAll('.profile-section').forEach(el => {
             el.classList.toggle('active', el.dataset.section === section);
         });
-        if (profileSectionTitleHeader && sectionTitles[section]) {
-            profileSectionTitleHeader.textContent = sectionTitles[section];
+        if (section === 'data-protection' && typeof window.updateDeviceLockUI === 'function') {
+            window.updateDeviceLockUI();
         }
         if (window.innerWidth <= 768) {
             profileModalBody?.classList.add('profile-mobile-content-open');
@@ -389,15 +414,16 @@ function initProfileModal() {
         if (connectorsLoading) connectorsLoading.style.display = 'none';
         const names = { google: 'Google', yandex: 'Яндекс' };
         if (!connectors || connectors.length === 0) {
-            connectorsList.innerHTML = '<p class="profile-connectors-empty">Нет привязанных аккаунтов</p>';
+            connectorsList.innerHTML = '<p class="profile-connectors-empty">' + (typeof lang === 'function' ? lang('profile', 'no_connectors', 'Нет привязанных аккаунтов') : 'Нет привязанных аккаунтов') + '</p>';
             return;
         }
+        const unlinkLabel = typeof lang === 'function' ? lang('profile', 'unlink', 'Отвязать') : 'Отвязать';
         connectorsList.innerHTML = connectors.map(c => {
             const name = names[c.provider] || c.provider;
             const email = c.provider_email ? ` (${escapeHtml(c.provider_email)})` : '';
             return `<div class="profile-connector-item" data-id="${c.id}">
                 <span class="profile-connector-name">${escapeHtml(name)}${email}</span>
-                <button type="button" class="btn btn-secondary profile-connector-unlink" data-id="${c.id}" title="Отвязать">Отвязать</button>
+                <button type="button" class="btn btn-secondary profile-connector-unlink" data-id="${c.id}" title="${escapeHtml(unlinkLabel)}">${escapeHtml(unlinkLabel)}</button>
             </div>`;
         }).join('');
     }
@@ -405,8 +431,8 @@ function initProfileModal() {
     function updatePasswordSection(hasPassword) {
         if (profilePasswordStatus) {
             profilePasswordStatus.textContent = hasPassword
-                ? 'Пароль задан. Вы можете сменить его ниже.'
-                : 'Пароль не задан. Задайте пароль, чтобы входить по логину.';
+                ? (typeof lang === 'function' ? lang('profile', 'password_set', 'Пароль задан. Вы можете сменить его ниже.') : 'Пароль задан. Вы можете сменить его ниже.')
+                : (typeof lang === 'function' ? lang('profile', 'password_not_set', 'Пароль не задан. Задайте пароль, чтобы входить по логину.') : 'Пароль не задан. Задайте пароль, чтобы входить по логину.');
         }
         if (labelCurrentPassword) labelCurrentPassword.style.display = hasPassword ? '' : 'none';
         if (profileCurrentPassword) profileCurrentPassword.style.display = hasPassword ? '' : 'none';
@@ -452,18 +478,19 @@ function initProfileModal() {
                 updatePasswordSection(!!data.has_password);
                 updateDeleteSection(!!data.has_password);
                 if (profilePasswordSection) profilePasswordSection.style.display = 'none';
-                if (profilePasswordToggleBtn) profilePasswordToggleBtn.textContent = data.has_password ? 'Сменить пароль' : 'Задать пароль';
+                if (profilePasswordToggleBtn) profilePasswordToggleBtn.textContent = data.has_password ? (typeof lang === 'function' ? lang('profile', 'change_password', 'Сменить пароль') : 'Сменить пароль') : (typeof lang === 'function' ? lang('profile', 'set_password', 'Задать пароль') : 'Задать пароль');
             })
             .catch(() => {
                 if (connectorsLoading) connectorsLoading.style.display = 'none';
-                if (connectorsList) connectorsList.innerHTML = '<p class="profile-connectors-empty">Не удалось загрузить</p>';
+                if (connectorsList) connectorsList.innerHTML = '<p class="profile-connectors-empty">' + (typeof lang === 'function' ? lang('profile', 'load_connectors_error', 'Не удалось загрузить') : 'Не удалось загрузить') + '</p>';
             });
-        modal.style.display = 'flex';
+        modal.classList.remove('is-hidden');
     }
 
     function closeModal() {
-        modal.style.display = 'none';
+        modal.classList.add('is-hidden');
     }
+    window.closeProfileSettingsModal = closeModal;
 
     profileSidebar?.addEventListener('click', (e) => {
         const item = e.target.closest('.profile-nav-item');
@@ -498,12 +525,12 @@ function initProfileModal() {
                                 renderConnectors(data.connectors || []);
                             });
                     } else {
-                        alert(res.error || 'Не удалось отвязать');
+                        alert(res.error || (typeof lang === 'function' ? lang('profile', 'unlink_error', 'Не удалось отвязать') : 'Не удалось отвязать'));
                         unlinkBtn.disabled = false;
                     }
                 })
                 .catch(() => {
-                    alert('Ошибка сети');
+                    alert(typeof lang === 'function' ? lang('common', 'network_error', 'Ошибка сети') : 'Ошибка сети');
                     unlinkBtn.disabled = false;
                 });
         });
@@ -521,21 +548,21 @@ function initProfileModal() {
             } catch (_) {}
             if (hasPassword && !currentPass) {
                 if (profilePasswordError) {
-                    profilePasswordError.textContent = 'Введите текущий пароль';
+                    profilePasswordError.textContent = typeof lang === 'function' ? lang('profile', 'enter_current_password', 'Введите текущий пароль') : 'Введите текущий пароль';
                     profilePasswordError.style.display = 'block';
                 }
                 return;
             }
             if (!newPass || newPass.length < 6) {
                 if (profilePasswordError) {
-                    profilePasswordError.textContent = 'Пароль не менее 6 символов';
+                    profilePasswordError.textContent = typeof lang === 'function' ? lang('profile', 'password_min_6', 'Пароль не менее 6 символов') : 'Пароль не менее 6 символов';
                     profilePasswordError.style.display = 'block';
                 }
                 return;
             }
             if (newPass !== confirmPass) {
                 if (profilePasswordError) {
-                    profilePasswordError.textContent = 'Пароли не совпадают';
+                    profilePasswordError.textContent = typeof lang === 'function' ? lang('profile', 'passwords_mismatch', 'Пароли не совпадают') : 'Пароли не совпадают';
                     profilePasswordError.style.display = 'block';
                 }
                 return;
@@ -558,13 +585,13 @@ function initProfileModal() {
                     if (profileCurrentPassword) profileCurrentPassword.value = '';
                 } else {
                     if (profilePasswordError) {
-                        profilePasswordError.textContent = res.error || 'Ошибка';
+                        profilePasswordError.textContent = res.error || (typeof lang === 'function' ? lang('common', 'error', 'Ошибка') : 'Ошибка');
                         profilePasswordError.style.display = 'block';
                     }
                 }
             } catch (err) {
                 if (profilePasswordError) {
-                    profilePasswordError.textContent = err.message || 'Ошибка сети';
+                    profilePasswordError.textContent = err.message || (typeof lang === 'function' ? lang('common', 'network_error', 'Ошибка сети') : 'Ошибка сети');
                     profilePasswordError.style.display = 'block';
                 }
             } finally {
@@ -575,7 +602,7 @@ function initProfileModal() {
 
     if (btnDeleteAccount) {
         btnDeleteAccount.addEventListener('click', async () => {
-            if (!confirm('Удалить аккаунт безвозвратно? Все ваши данные будут удалены.')) return;
+            if (!confirm(typeof lang === 'function' ? lang('profile', 'delete_account_confirm', 'Удалить аккаунт безвозвратно? Все ваши данные будут удалены.') : 'Удалить аккаунт безвозвратно? Все ваши данные будут удалены.')) return;
             let hasPassword = false;
             try {
                 const meRes = await fetch(`${API_BASE}/api/auth.php?action=me`).then(r => r.json());
@@ -584,7 +611,7 @@ function initProfileModal() {
             const password = profileDeletePassword ? profileDeletePassword.value : '';
             if (hasPassword && !password) {
                 if (profileDeleteError) {
-                    profileDeleteError.textContent = 'Введите пароль для подтверждения';
+                    profileDeleteError.textContent = typeof lang === 'function' ? lang('profile', 'enter_password_confirm', 'Введите пароль для подтверждения') : 'Введите пароль для подтверждения';
                     profileDeleteError.style.display = 'block';
                 }
                 return;
@@ -621,6 +648,7 @@ function initProfileModal() {
     navUserArea.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openModal(); } });
     if (btnClose) btnClose.addEventListener('click', closeModal);
     if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+    window.openProfileSettings = openModal;
 
     profileLoginEdit?.addEventListener('click', () => {
         if (input) {
@@ -645,12 +673,12 @@ function initProfileModal() {
     profilePasswordToggleBtn?.addEventListener('click', () => {
         const visible = profilePasswordSection?.style.display !== 'none';
         if (profilePasswordSection) profilePasswordSection.style.display = visible ? 'none' : 'block';
-        if (profilePasswordToggleBtn) profilePasswordToggleBtn.textContent = visible ? (currentUserData.has_password ? 'Сменить пароль' : 'Задать пароль') : 'Скрыть';
+        if (profilePasswordToggleBtn) profilePasswordToggleBtn.textContent = visible ? (currentUserData.has_password ? (typeof lang === 'function' ? lang('profile', 'change_password', 'Сменить пароль') : 'Сменить пароль') : (typeof lang === 'function' ? lang('profile', 'set_password', 'Задать пароль') : 'Задать пароль')) : (typeof lang === 'function' ? lang('profile', 'hide', 'Скрыть') : 'Скрыть');
     });
 
     btnCancelPassword?.addEventListener('click', () => {
         if (profilePasswordSection) profilePasswordSection.style.display = 'none';
-        if (profilePasswordToggleBtn) profilePasswordToggleBtn.textContent = currentUserData.has_password ? 'Сменить пароль' : 'Задать пароль';
+        if (profilePasswordToggleBtn) profilePasswordToggleBtn.textContent = currentUserData.has_password ? (typeof lang === 'function' ? lang('profile', 'change_password', 'Сменить пароль') : 'Сменить пароль') : (typeof lang === 'function' ? lang('profile', 'set_password', 'Задать пароль') : 'Задать пароль');
         profileNewPassword.value = '';
         profileNewPasswordConfirm.value = '';
         if (profileCurrentPassword) profileCurrentPassword.value = '';
@@ -718,6 +746,35 @@ function initProfileModal() {
         }
     });
 
+    const profileLocale = document.getElementById('profileLocale');
+    const profileLocaleError = document.getElementById('profileLocaleError');
+    const btnSaveLocale = document.getElementById('btnSaveLocale');
+    btnSaveLocale?.addEventListener('click', async () => {
+        if (!profileLocale) return;
+        const locale = profileLocale.value;
+        showError(profileLocaleError, '');
+        btnSaveLocale.disabled = true;
+        try {
+            const res = await fetch(`${API_BASE}/api/users.php`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ locale: locale })
+            }).then(r => r.json());
+            if (res.success) {
+                const params = new URLSearchParams(window.location.search);
+                params.set('lang', locale);
+                window.location.href = window.location.pathname + '?' + params.toString();
+                return;
+            } else {
+                showError(profileLocaleError, res.error || 'Error');
+            }
+        } catch (err) {
+            showError(profileLocaleError, err.message || 'Network error');
+        } finally {
+            btnSaveLocale.disabled = false;
+        }
+    });
+
     btnSaveUsername?.addEventListener('click', async () => {
         const newUsername = input?.value?.trim() ?? '';
         if (!newUsername || newUsername.length < 3) {
@@ -753,17 +810,17 @@ function initProfileModal() {
     });
 
     btnDeleteHistory?.addEventListener('click', async () => {
-        if (!confirm('Заменить вас на «неизвестный автор» во всех сообщениях? Это действие необратимо.')) return;
+        if (!confirm(typeof lang === 'function' ? lang('profile', 'delete_history_confirm', 'Заменить вас на «неизвестный автор» во всех сообщениях? Это действие необратимо.') : 'Заменить вас на «неизвестный автор» во всех сообщениях? Это действие необратимо.')) return;
         btnDeleteHistory.disabled = true;
         try {
             const res = await fetch(`${API_BASE}/api/auth.php?action=delete_history`, { method: 'POST' }).then(r => r.json());
             if (res.success) {
-                alert('История анонимизирована');
+                alert(typeof lang === 'function' ? lang('profile', 'history_anonymized', 'История анонимизирована') : 'История анонимизирована');
             } else {
-                alert(res.error || 'Ошибка');
+                alert(res.error || (typeof lang === 'function' ? lang('common', 'error', 'Ошибка') : 'Ошибка'));
             }
         } catch (err) {
-            alert(err.message || 'Ошибка сети');
+            alert(err.message || (typeof lang === 'function' ? lang('common', 'network_error', 'Ошибка сети') : 'Ошибка сети'));
         } finally {
             btnDeleteHistory.disabled = false;
         }
@@ -826,7 +883,7 @@ function initProfileModal() {
             if (!cropState.cropper) return;
             const canvas = cropState.cropper.getCroppedCanvas({ maxWidth: 400, maxHeight: 400 });
             if (!canvas) {
-                if (cropErrorEl) { cropErrorEl.textContent = 'Не удалось обрезать'; cropErrorEl.style.display = 'block'; }
+                if (cropErrorEl) { cropErrorEl.textContent = typeof lang === 'function' ? lang('profile', 'crop_error', 'Не удалось обрезать') : 'Не удалось обрезать'; cropErrorEl.style.display = 'block'; }
                 return;
             }
             if (btnCropApply) btnCropApply.disabled = true;
@@ -834,7 +891,7 @@ function initProfileModal() {
             const mimeType = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
             canvas.toBlob((blob) => {
                 if (!blob) {
-                    if (cropErrorEl) { cropErrorEl.textContent = 'Ошибка обработки'; cropErrorEl.style.display = 'block'; }
+                    if (cropErrorEl) { cropErrorEl.textContent = typeof lang === 'function' ? lang('profile', 'processing_error', 'Ошибка обработки') : 'Ошибка обработки'; cropErrorEl.style.display = 'block'; }
                     if (btnCropApply) btnCropApply.disabled = false;
                     return;
                 }
@@ -851,7 +908,7 @@ function initProfileModal() {
                             data = JSON.parse(text);
                         } catch (e) {
                             console.error('Upload: сервер вернул не JSON (возможно HTML-страница ошибки). Status:', res.status, 'Body:', text.slice(0, 300));
-                            return { ok: false, data: { error: 'Сервер вернул страницу ошибки. Проверьте логи PHP на сервере (или права на uploads/avatars).' } };
+                            return { ok: false, data: { error: (typeof lang === 'function' ? lang('profile', 'server_error_page', 'Сервер вернул страницу ошибки. Проверьте логи PHP на сервере (или права на uploads/avatars).') : 'Сервер вернул страницу ошибки. Проверьте логи PHP на сервере (или права на uploads/avatars).') } };
                         }
                         return { ok: res.ok, data };
                     })
@@ -861,14 +918,14 @@ function initProfileModal() {
                             if (typeof onCropSuccess === 'function') onCropSuccess(url);
                             closeCropModal();
                         } else {
-                            const msg = data.error || 'Ошибка загрузки';
+                            const msg = data.error || (typeof lang === 'function' ? lang('profile', 'upload_error', 'Ошибка загрузки') : 'Ошибка загрузки');
                             console.error('Upload failed:', msg);
                             if (cropErrorEl) { cropErrorEl.textContent = msg; cropErrorEl.style.display = 'block'; }
                         }
                     })
                     .catch((err) => {
                         console.error('Upload error:', err);
-                        if (cropErrorEl) { cropErrorEl.textContent = 'Ошибка загрузки'; cropErrorEl.style.display = 'block'; }
+                        if (cropErrorEl) { cropErrorEl.textContent = typeof lang === 'function' ? lang('profile', 'upload_error', 'Ошибка загрузки') : 'Ошибка загрузки'; cropErrorEl.style.display = 'block'; }
                     })
                     .finally(() => { if (btnCropApply) btnCropApply.disabled = false; });
             }, mimeType, 0.9);
@@ -911,3 +968,66 @@ function initProfileModal() {
         if (btnRemoveAvatar) btnRemoveAvatar.style.display = '';
     }
 }
+
+// Кнопки показа/скрытия пароля во всех полях type="password"
+(function initPasswordToggle() {
+    var showLabel = 'Show password';
+    var hideLabel = 'Hide password';
+    if (typeof window.__LANG__ !== 'undefined' && window.__LANG__.common) {
+        showLabel = window.__LANG__.common.show_password || showLabel;
+        hideLabel = window.__LANG__.common.hide_password || hideLabel;
+    }
+    var eyeSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>';
+    var eyeOffSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>';
+
+    function wrapPasswordInput(input) {
+        if (input.readOnly || input.getAttribute('data-password-toggle')) return;
+        input.setAttribute('data-password-toggle', '1');
+        var wrap = document.createElement('span');
+        wrap.className = 'password-input-wrap';
+        input.parentNode.insertBefore(wrap, input);
+        wrap.appendChild(input);
+
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'password-toggle-btn';
+        btn.setAttribute('aria-label', showLabel);
+        btn.innerHTML = eyeSvg;
+        wrap.appendChild(btn);
+
+        btn.addEventListener('click', function () {
+            var isPass = input.type === 'password';
+            input.type = isPass ? 'text' : 'password';
+            btn.setAttribute('aria-label', isPass ? hideLabel : showLabel);
+            btn.innerHTML = isPass ? eyeOffSvg : eyeSvg;
+        });
+    }
+
+    function run() {
+        var list = document.querySelectorAll('input[type="password"]');
+        for (var i = 0; i < list.length; i++) wrapPasswordInput(list[i]);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', run);
+    } else {
+        run();
+    }
+    // Поддержка динамически добавленных полей (например, в модалках)
+    if (typeof MutationObserver !== 'undefined') {
+        var observer = new MutationObserver(function (mutations) {
+            for (var m = 0; m < mutations.length; m++) {
+                var added = mutations[m].addedNodes;
+                for (var n = 0; n < added.length; n++) {
+                    var node = added[n];
+                    if (node.nodeType === 1) {
+                        if (node.tagName === 'INPUT' && node.type === 'password') wrapPasswordInput(node);
+                        var pw = node.querySelectorAll && node.querySelectorAll('input[type="password"]');
+                        if (pw) for (var k = 0; k < pw.length; k++) wrapPasswordInput(pw[k]);
+                    }
+                }
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+})();

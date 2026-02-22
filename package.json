@@ -1,0 +1,14 @@
+{
+  "name": "messenger",
+  "private": true,
+  "description": "E2EE messenger — package.json только для сборки локального бандла ГОСТ VKO (без CDN).",
+  "scripts": {
+    "build:gost-vko": "node build-gost-vko.js"
+  },
+  "dependencies": {
+    "@li0ard/gostcurves": "^0.1.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

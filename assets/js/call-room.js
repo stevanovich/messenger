@@ -6,6 +6,9 @@
 (function() {
     'use strict';
 
+    var C = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.calls) || {};
+    function callsL(key, fallback) { return (C[key] !== undefined && C[key] !== '') ? C[key] : (fallback || ''); }
+
     var params = new URLSearchParams(window.location.search);
     var guestToken = params.get('guest_token') || '';
     var groupCallId = parseInt(params.get('group_call_id'), 10) || 0;
@@ -30,6 +33,7 @@
     var authenticated = false;
     var callStartTime = null;
     var durationInterval = null;
+    var callMinimized = false;
 
     var STUN = 'stun:stun.l.google.com:19302';
 
@@ -79,7 +83,7 @@
         videoEl.setAttribute('autoplay', '');
         var nameLabel = document.createElement('span');
         nameLabel.className = 'call-room-remote-slot-name';
-        nameLabel.textContent = peerNames[targetKey] || (isGuest ? 'Гость' : 'Участник');
+        nameLabel.textContent = peerNames[targetKey] || (isGuest ? callsL('guest', 'Гость') : callsL('participant', 'Участник'));
         var wrap = document.createElement('div');
         wrap.className = 'call-room-remote-slot';
         wrap.dataset.peerKey = targetKey;
@@ -169,7 +173,7 @@
             screenStream = stream;
             isSharingScreen = true;
             var screenTrack = stream.getVideoTracks()[0];
-            if (!screenTrack) return Promise.reject(new Error('Нет видеотрека'));
+            if (!screenTrack) return Promise.reject(new Error(callsL('load_error', 'Нет видеотрека')));
             screenTrack.onended = function() { stopScreenShareGuest(); };
             var videoTrack = localStream.getVideoTracks()[0];
             if (videoTrack) {
@@ -293,8 +297,8 @@
         var btn = document.getElementById('callRoomShareScreen');
         if (!btn) return;
         btn.classList.toggle('btn-call-off', !!isSharingScreen);
-        btn.title = isSharingScreen ? 'Остановить демонстрацию экрана' : 'Поделиться экраном';
-        btn.setAttribute('aria-label', isSharingScreen ? 'Остановить демонстрацию' : 'Поделиться экраном');
+        btn.title = isSharingScreen ? callsL('stop_recording', 'Остановить запись') : callsL('share_screen_title', 'Поделиться экраном');
+        btn.setAttribute('aria-label', isSharingScreen ? callsL('stop_recording', 'Остановить') : callsL('share_screen_title', 'Поделиться экраном'));
     }
 
     function formatDuration(ms) {
@@ -309,10 +313,34 @@
         if (!durEl) return;
         function tick() {
             if (!callStartTime) return;
-            durEl.textContent = formatDuration(Date.now() - callStartTime);
+            var text = formatDuration(Date.now() - callStartTime);
+            durEl.textContent = text;
+            var minDur = document.getElementById('callRoomMinimizedDuration');
+            if (minDur && callMinimized) minDur.textContent = text;
         }
         tick();
         durationInterval = setInterval(tick, 1000);
+    }
+
+    function minimizeCallRoom() {
+        if (!callStartTime) return;
+        callMinimized = true;
+        var panel = document.querySelector('.call-room-panel');
+        if (panel) panel.classList.add('call-room-panel-minimized');
+        var bar = document.getElementById('callRoomMinimizedBar');
+        if (bar) {
+            bar.classList.add('call-room-minimized-bar-visible');
+            var nameEl = document.getElementById('callRoomMinimizedName');
+            if (nameEl) nameEl.textContent = C.group_call_title || callsL('group_call_title', 'Групповой звонок');
+        }
+    }
+
+    function expandCallRoom() {
+        callMinimized = false;
+        var panel = document.querySelector('.call-room-panel');
+        if (panel) panel.classList.remove('call-room-panel-minimized');
+        var bar = document.getElementById('callRoomMinimizedBar');
+        if (bar) bar.classList.remove('call-room-minimized-bar-visible');
     }
 
     function stopDurationTimer() {
@@ -323,7 +351,7 @@
     }
 
     function connectWs() {
-        if (!wsUrl || !wsGuestToken) return Promise.reject(new Error('Нет WebSocket URL или токена'));
+        if (!wsUrl || !wsGuestToken) return Promise.reject(new Error(callsL('connection_error', 'Нет WebSocket URL или токена')));
         return new Promise(function(resolve, reject) {
             ws = new WebSocket(wsUrl);
             ws.onopen = function() {
@@ -340,11 +368,11 @@
                     return;
                 }
                 if (type === 'auth_error') {
-                    reject(new Error(data.message || 'Ошибка авторизации'));
+                    reject(new Error(data.message || callsL('load_error', 'Ошибка авторизации')));
                     return;
                 }
                 if (type === 'call.group.ended' && data.group_call_id === groupCallId) {
-                    document.getElementById('callRoomStatus').textContent = 'Звонок завершён.';
+                    document.getElementById('callRoomStatus').textContent = callsL('call_ended', 'Звонок завершён.');
                     setTimeout(function() { window.location.href = baseUrl + '/'; }, 2000);
                     return;
                 }
@@ -414,9 +442,9 @@
                     }
                 }
             };
-            ws.onerror = function() { reject(new Error('WebSocket ошибка')); };
+            ws.onerror = function() { reject(new Error(callsL('ws_error', 'WebSocket ошибка'))); };
             ws.onclose = function() {
-                if (!authenticated) reject(new Error('Соединение закрыто'));
+                if (!authenticated) reject(new Error(callsL('connection_closed', 'Соединение закрыто')));
             };
         });
     }
@@ -429,35 +457,42 @@
         var leaveBtn = document.getElementById('callRoomLeaveBtn');
         var muteBtn = document.getElementById('callRoomMute');
 
-        statusEl.textContent = 'Подключение…';
+        statusEl.textContent = callsL('connecting', 'Подключение…');
 
         connectWs().then(function() {
             return apiRequest(baseUrl + '/api/calls.php?action=group_status_guest&guest_token=' + encodeURIComponent(guestToken) + '&group_call_id=' + groupCallId);
         }).then(function(res) {
-            if (!res || !res.success || !res.data) throw new Error('Не удалось загрузить участников');
+            if (!res || !res.success || !res.data) throw new Error(callsL('load_participants_error_guest', 'Не удалось загрузить участников'));
             var data = res.data;
             (data.participants || []).forEach(function(p) {
-                if (p.user_uuid) peerNames[p.user_uuid] = p.display_name || 'Участник';
+                if (p.user_uuid) peerNames[p.user_uuid] = p.display_name || callsL('participant', 'Участник');
             });
             (data.guests || []).forEach(function(g) {
-                if (g.id) peerNames['guest_' + g.id] = g.display_name || 'Гость';
+                if (g.id) peerNames['guest_' + g.id] = g.display_name || callsL('guest', 'Гость');
             });
-            statusEl.textContent = 'Вы в звонке.';
+            statusEl.textContent = callsL('you_in_call', 'Вы в звонке.');
             callStartTime = Date.now();
             startDurationTimer();
+            var minBtn = document.getElementById('callRoomMinimize');
+            if (minBtn) minBtn.style.display = 'inline-flex';
             setTimeout(function() {
-                if (statusEl.textContent === 'Вы в звонке.') statusEl.style.visibility = 'hidden';
+                if (statusEl.textContent === (C.you_in_call || 'Вы в звонке.')) statusEl.style.visibility = 'hidden';
             }, 2000);
-            return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            return navigator.mediaDevices.getUserMedia({ audio: true, video: withVideo ? { facingMode: 'user' } : false });
         }).then(function(stream) {
             localStream = stream;
-            stream.getAudioTracks().forEach(function(t) { t.enabled = false; });
-            if (muteBtn) muteBtn.classList.add('btn-call-off');
-            sendMuteStateGuest(true);
+            if (muteBtn) {
+                muteBtn.classList.add('btn-call-unmuted');
+            }
+            sendMuteStateGuest(false);
             if (localVideoEl) {
                 localVideoEl.srcObject = stream;
                 localVideoEl.muted = true;
                 localVideoEl.play().catch(function() {});
+            }
+            if (withVideo) {
+                var pipWrap = document.getElementById('callRoomLocalPipWrap');
+                if (pipWrap) pipWrap.style.display = '';
             }
             return apiRequest(baseUrl + '/api/calls.php?action=group_status_guest&guest_token=' + encodeURIComponent(guestToken) + '&group_call_id=' + groupCallId);
         }).then(function(res) {
@@ -484,7 +519,12 @@
                         if (vt) {
                             vt.enabled = !vt.enabled;
                             videoBtn.classList.toggle('btn-call-off', !vt.enabled);
-                            if (localVideoEl) { localVideoEl.srcObject = localStream; localVideoEl.play().catch(function(){}); }
+                            if (localVideoEl) {
+                                localVideoEl.srcObject = vt.enabled ? localStream : null;
+                                if (vt.enabled) localVideoEl.play().catch(function(){});
+                            }
+                            var pipWrap = document.getElementById('callRoomLocalPipWrap');
+                            if (pipWrap) pipWrap.style.display = vt.enabled ? '' : 'none';
                             renegotiateAllPeers();
                         } else {
                             navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } }).then(function(vStream) {
@@ -516,10 +556,14 @@
                         if (!localStream || isSharingScreen) return;
                         var vt = localStream.getVideoTracks()[0];
                         if (!vt) return;
+                        var prevFacing = currentFacingMode;
                         currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
                         navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } }).then(function(vStream) {
                             var newTrack = vStream.getVideoTracks()[0];
-                            if (!newTrack) return;
+                            if (!newTrack) {
+                                currentFacingMode = prevFacing;
+                                return;
+                            }
                             vt.stop();
                             localStream.removeTrack(vt);
                             localStream.addTrack(newTrack);
@@ -536,13 +580,42 @@
                                 }
                             });
                             Promise.all(replacePromises).then(function() { renegotiateAllPeers(); }).catch(function() { renegotiateAllPeers(); });
-                        }).catch(function() {});
+                        }).catch(function(err) {
+                            currentFacingMode = prevFacing;
+                            console.error('Switch camera failed:', err);
+                            if (typeof window.showToast === 'function') {
+                                window.showToast(callsL('switch_camera_error', 'Не удалось переключить камеру'));
+                            }
+                        });
                     });
                 }
             });
         }).catch(function(err) {
-            statusEl.textContent = (err && err.message) || 'Ошибка подключения';
+            statusEl.textContent = (err && err.message) || callsL('connection_error', 'Ошибка подключения');
         });
+
+        var minBtn = document.getElementById('callRoomMinimize');
+        if (minBtn) minBtn.addEventListener('click', function() { minimizeCallRoom(); });
+
+        var minBar = document.getElementById('callRoomMinimizedBar');
+        if (minBar) {
+            minBar.addEventListener('click', function(e) {
+                if (callMinimized && !e.target.closest('.call-room-minimized-bar-hangup')) expandCallRoom();
+            });
+            minBar.addEventListener('keydown', function(e) {
+                if ((e.key === 'Enter' || e.key === ' ') && callMinimized && !e.target.closest('.call-room-minimized-bar-hangup')) {
+                    e.preventDefault();
+                    expandCallRoom();
+                }
+            });
+        }
+        var minBarHangup = document.getElementById('callRoomMinimizedBarHangup');
+        if (minBarHangup) {
+            minBarHangup.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (leaveBtn) leaveBtn.click();
+            });
+        }
 
         if (leaveBtn) {
             leaveBtn.addEventListener('click', function() {
@@ -570,7 +643,8 @@
                 var t = localStream.getAudioTracks()[0];
                 if (t) {
                     t.enabled = !t.enabled;
-                    muteBtn.classList.toggle('btn-call-off', !t.enabled);
+                    muteBtn.classList.toggle('btn-call-muted', !t.enabled);
+                    muteBtn.classList.toggle('btn-call-unmuted', t.enabled);
                     sendMuteStateGuest(!t.enabled);
                 }
             });

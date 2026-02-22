@@ -30,6 +30,25 @@ function isAdmin() {
 }
 
 /**
+ * Убирает дублирование базового пути в URI (напр. /sites/messenger/sites/messenger/ -> /sites/messenger/).
+ * @param string $uri REQUEST_URI или путь с опциональным query
+ * @return string
+ */
+function normalize_request_uri_path($uri) {
+    $basePath = defined('BASE_URL') ? parse_url(BASE_URL, PHP_URL_PATH) : null;
+    if ($basePath === null || $basePath === false || $basePath === '' || $basePath === '/') {
+        return $uri;
+    }
+    $basePath = rtrim($basePath, '/');
+    $pathPart = (strpos($uri, '?') !== false) ? substr($uri, 0, strpos($uri, '?')) : $uri;
+    $queryPart = (strpos($uri, '?') !== false) ? substr($uri, strpos($uri, '?')) : '';
+    if ($pathPart !== '' && strpos($pathPart, $basePath . $basePath) === 0) {
+        $pathPart = $basePath . substr($pathPart, strlen($basePath . $basePath));
+    }
+    return $pathPart . $queryPart;
+}
+
+/**
  * Путь к файлу настройки отображения индикатора режима обновления (для всех пользователей)
  */
 function getConnectionStatusDisplayConfigPath() {
@@ -73,6 +92,49 @@ function saveShowConnectionStatusIndicator($show) {
 }
 
 /**
+ * Путь к файлу настройки использования Twemoji для отображения эмодзи.
+ */
+function getTwemojiEnabledConfigPath() {
+    $root = rtrim(defined('ROOT_PATH') ? ROOT_PATH : dirname(__DIR__), '/\\');
+    return $root . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'twemoji_enabled.json';
+}
+
+/**
+ * Включено ли отображение эмодзи через Twemoji (флаги и др.) для всех пользователей.
+ * Значение хранится в config/twemoji_enabled.json. По умолчанию — включено (true).
+ */
+function getTwemojiEnabled() {
+    $path = getTwemojiEnabledConfigPath();
+    if (!is_file($path) || !is_readable($path)) {
+        return true;
+    }
+    $json = @file_get_contents($path);
+    if ($json === false) {
+        return true;
+    }
+    $data = @json_decode($json, true);
+    if (!is_array($data) || !array_key_exists('enabled', $data)) {
+        return true;
+    }
+    return (bool) $data['enabled'];
+}
+
+/**
+ * Сохранить настройку Twemoji (только для админки).
+ * @param bool $enabled
+ * @return bool успех записи
+ */
+function saveTwemojiEnabled($enabled) {
+    $path = getTwemojiEnabledConfigPath();
+    $dir = dirname($path);
+    if (!is_dir($dir) || !is_writable($dir)) {
+        return false;
+    }
+    $content = json_encode(['enabled' => (bool) $enabled], JSON_UNESCAPED_UNICODE);
+    return file_put_contents($path, $content) !== false;
+}
+
+/**
  * Получить текущего пользователя
  */
 function getCurrentUser() {
@@ -82,7 +144,7 @@ function getCurrentUser() {
     
     try {
         global $pdo;
-        $stmt = $pdo->prepare("SELECT uuid, username, display_name, status, avatar, last_seen FROM users WHERE uuid = ?");
+        $stmt = $pdo->prepare("SELECT uuid, username, display_name, status, avatar, last_seen, locale FROM users WHERE uuid = ?");
         $stmt->execute([$_SESSION['user_uuid']]);
         return $stmt->fetch();
     } catch (PDOException $e) {
@@ -153,12 +215,15 @@ function generateToken() {
 
 /**
  * Превью контента сообщения для блока «Ответ на» (reply_to)
- * @param array $row строка сообщения: content, type, file_name, deleted_at
+ * @param array $row строка сообщения: content, type, file_name, deleted_at, encrypted
  * @return string
  */
 function messageReplyContentPreview(array $row) {
     if (!empty($row['deleted_at'])) {
         return '[Сообщение удалено]';
+    }
+    if (!empty($row['encrypted'])) {
+        return '[Зашифровано]';
     }
     $type = $row['type'] ?? 'text';
     switch ($type) {
@@ -180,9 +245,9 @@ function messageReplyContentPreview(array $row) {
 }
 
 /**
- * Построить объект reply_to для API из строки сообщения (с полями id, username от JOIN)
- * @param array $row id, content, type, file_name, deleted_at, username
- * @return array { id, content_preview, username, type }
+ * Построить объект reply_to для API из строки сообщения (с полями id, content, encrypted, username от JOIN)
+ * @param array $row id, content, type, file_name, deleted_at, encrypted, username
+ * @return array { id, content_preview, username, type, encrypted }
  */
 function buildReplyToObject(array $row) {
     $username = trim($row['display_name'] ?? '') ?: trim($row['username'] ?? '') ?: 'неизвестный автор';
@@ -191,6 +256,7 @@ function buildReplyToObject(array $row) {
         'content_preview' => messageReplyContentPreview($row),
         'username' => $username,
         'type' => $row['type'] ?? 'text',
+        'encrypted' => (int) ($row['encrypted'] ?? 0),
     ];
 }
 

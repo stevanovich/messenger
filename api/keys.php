@@ -19,6 +19,26 @@ updateLastSeenIfNeeded();
 $method = $_SERVER['REQUEST_METHOD'];
 global $pdo;
 
+/** Список разрешённых алгоритмов E2EE (из конфига). По умолчанию только ECDH-P256-AES-GCM. */
+function getE2EEAlgorithms() {
+    $path = __DIR__ . '/../config/e2ee_algorithms.php';
+    if (!is_file($path)) {
+        $path = __DIR__ . '/../config/e2ee_algorithms.example.php';
+    }
+    if (!is_file($path)) {
+        return ['ECDH-P256-AES-GCM'];
+    }
+    $list = include $path;
+    if (!is_array($list)) {
+        return ['ECDH-P256-AES-GCM'];
+    }
+    $allowed = ['ECDH-P256-AES-GCM', 'GOST-Kuznechik-MGM', 'GOST-Magma-MGM'];
+    $list = array_values(array_filter($list, function ($a) use ($allowed) {
+        return is_string($a) && in_array(trim($a), $allowed, true);
+    }));
+    return $list !== [] ? $list : ['ECDH-P256-AES-GCM'];
+}
+
 /** Загрузка настроек защиты ключей (этап 4) */
 function getKeyBackupConfig() {
     $path = __DIR__ . '/../config/e2ee_key_backup.php';
@@ -46,9 +66,44 @@ function getKeyBackupConfig() {
     ], $cfg) : [];
 }
 
+/** Настройки E2EE (согласование ключей для ГОСТ и т.д.) */
+function getE2EEOptions() {
+    $path = __DIR__ . '/../config/e2ee_options.php';
+    if (!is_file($path)) {
+        $path = __DIR__ . '/../config/e2ee_options.example.php';
+    }
+    if (!is_file($path)) {
+        return [ 'gost_key_agreement' => 'ECDH-P256' ];
+    }
+    $opts = include $path;
+    if (!is_array($opts)) {
+        return [ 'gost_key_agreement' => 'ECDH-P256' ];
+    }
+    $allowed = [ 'ECDH-P256', 'GOST-R-34.10' ];
+    $v = isset($opts['gost_key_agreement']) ? trim((string) $opts['gost_key_agreement']) : 'ECDH-P256';
+    if (!in_array($v, $allowed, true)) {
+        $v = 'ECDH-P256';
+    }
+    return [ 'gost_key_agreement' => $v ];
+}
+
 try {
     if ($method === 'GET') {
         $action = $_GET['action'] ?? '';
+        if ($action === 'config') {
+            $cfg = getKeyBackupConfig();
+            $opts = getE2EEOptions();
+            jsonSuccess([
+                'algorithms' => getE2EEAlgorithms(),
+                'gost_key_agreement' => $opts['gost_key_agreement'],
+                'key_backup' => [
+                    'client_delay_base_sec' => (int) ($cfg['client_delay_base_sec'] ?? 2),
+                    'client_delay_max_sec' => (int) ($cfg['client_delay_max_sec'] ?? 300),
+                    'kdf_iterations' => (int) ($cfg['kdf_iterations'] ?? 100000),
+                ],
+            ]);
+            exit;
+        }
         if ($action === 'limits') {
             $cfg = getKeyBackupConfig();
             jsonSuccess([
@@ -103,41 +158,92 @@ try {
             if (!$stmt->fetch()) {
                 jsonError('Нет доступа к беседе', 403);
             }
-            $stmt = $pdo->prepare("SELECT key_blob, encrypted_by_uuid FROM conversation_member_keys WHERE conversation_id = ? AND user_uuid = ?");
-            $stmt->execute([$conversationId, $currentUserUuid]);
+            try {
+                $stmt = $pdo->prepare("SELECT key_blob, encrypted_by_uuid, algorithm FROM conversation_member_keys WHERE conversation_id = ? AND user_uuid = ?");
+                $stmt->execute([$conversationId, $currentUserUuid]);
+            } catch (PDOException $e) {
+                $msg = $e->getMessage();
+                if (strpos($msg, 'algorithm') !== false && (strpos($msg, 'Unknown column') !== false || strpos($msg, '1054') !== false)) {
+                    $stmt = $pdo->prepare("SELECT key_blob, encrypted_by_uuid FROM conversation_member_keys WHERE conversation_id = ? AND user_uuid = ?");
+                    $stmt->execute([$conversationId, $currentUserUuid]);
+                } else {
+                    throw $e;
+                }
+            }
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$row) {
-                jsonSuccess(['key_blob' => null, 'encrypted_by_uuid' => null]);
+                jsonSuccess(['key_blob' => null, 'encrypted_by_uuid' => null, 'algorithm' => null]);
                 exit;
             }
-            jsonSuccess(['key_blob' => $row['key_blob'], 'encrypted_by_uuid' => $row['encrypted_by_uuid']]);
+            $algorithm = isset($row['algorithm']) ? $row['algorithm'] : null;
+            jsonSuccess([
+                'key_blob' => $row['key_blob'],
+                'encrypted_by_uuid' => $row['encrypted_by_uuid'],
+                'algorithm' => $algorithm,
+            ]);
             exit;
         }
         $userUuid = trim($_GET['user_uuid'] ?? '');
         if ($userUuid === '') {
             $userUuid = getCurrentUserUuid();
         }
+        $requestedAlgorithm = trim($_GET['algorithm'] ?? '');
         $stmt = $pdo->prepare("
             SELECT user_uuid, public_key_jwk, algorithm, updated_at
             FROM user_public_keys
             WHERE user_uuid = ?
         ");
         $stmt->execute([$userUuid]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$row) {
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if ($rows === []) {
+            if ($requestedAlgorithm !== '') {
+                jsonSuccess(['public_key' => null, 'algorithm' => null, 'updated_at' => null]);
+            } else {
+                jsonSuccess(['keys' => []]);
+            }
+            exit;
+        }
+        if ($requestedAlgorithm !== '') {
+            foreach ($rows as $row) {
+                if ($row['algorithm'] === $requestedAlgorithm) {
+                    $jwk = @json_decode($row['public_key_jwk'], true);
+                    if ($jwk === null && $row['public_key_jwk'] !== '') {
+                        $jwk = $row['public_key_jwk'];
+                    }
+                    jsonSuccess([
+                        'user_uuid' => $row['user_uuid'],
+                        'public_key' => $jwk,
+                        'algorithm' => $row['algorithm'],
+                        'updated_at' => $row['updated_at'],
+                    ]);
+                    exit;
+                }
+            }
             jsonSuccess(['public_key' => null, 'algorithm' => null, 'updated_at' => null]);
             exit;
         }
-        $jwk = @json_decode($row['public_key_jwk'], true);
-        if ($jwk === null && $row['public_key_jwk'] !== '') {
-            $jwk = $row['public_key_jwk'];
+        $keys = [];
+        foreach ($rows as $row) {
+            $jwk = @json_decode($row['public_key_jwk'], true);
+            if ($jwk === null && $row['public_key_jwk'] !== '') {
+                $jwk = $row['public_key_jwk'];
+            }
+            $keys[] = [
+                'algorithm' => $row['algorithm'],
+                'public_key' => $jwk,
+                'updated_at' => $row['updated_at'],
+            ];
         }
-        jsonSuccess([
-            'user_uuid' => $row['user_uuid'],
-            'public_key' => $jwk,
-            'algorithm' => $row['algorithm'],
-            'updated_at' => $row['updated_at'],
-        ]);
+        if (count($keys) === 1) {
+            jsonSuccess([
+                'user_uuid' => $userUuid,
+                'public_key' => $keys[0]['public_key'],
+                'algorithm' => $keys[0]['algorithm'],
+                'updated_at' => $keys[0]['updated_at'],
+            ]);
+            exit;
+        }
+        jsonSuccess(['user_uuid' => $userUuid, 'keys' => $keys]);
         exit;
     }
 
@@ -179,6 +285,10 @@ try {
             $conversationId = (int)($data['conversation_id'] ?? 0);
             $targetUserUuid = trim((string)($data['user_uuid'] ?? ''));
             $keyBlob = $data['key_blob'] ?? '';
+            $algorithm = isset($data['algorithm']) ? trim((string) $data['algorithm']) : null;
+            if ($algorithm === '') {
+                $algorithm = null;
+            }
             if ($conversationId <= 0 || $targetUserUuid === '' || $keyBlob === '') {
                 jsonError('Укажите conversation_id, user_uuid и key_blob', 400);
             }
@@ -191,12 +301,26 @@ try {
             if (!$stmt->fetch()) {
                 jsonError('Нет доступа к беседе', 403);
             }
-            $stmt = $pdo->prepare("
-                INSERT INTO conversation_member_keys (conversation_id, user_uuid, encrypted_by_uuid, key_blob)
-                VALUES (?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE encrypted_by_uuid = VALUES(encrypted_by_uuid), key_blob = VALUES(key_blob)
-            ");
-            $stmt->execute([$conversationId, $targetUserUuid, $currentUserUuid, $keyBlob]);
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO conversation_member_keys (conversation_id, user_uuid, encrypted_by_uuid, key_blob, algorithm)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE encrypted_by_uuid = VALUES(encrypted_by_uuid), key_blob = VALUES(key_blob), algorithm = VALUES(algorithm)
+                ");
+                $stmt->execute([$conversationId, $targetUserUuid, $currentUserUuid, $keyBlob, $algorithm]);
+            } catch (PDOException $e) {
+                $msg = $e->getMessage();
+                if (strpos($msg, 'algorithm') !== false && (strpos($msg, 'Unknown column') !== false || strpos($msg, '1054') !== false)) {
+                    $stmt = $pdo->prepare("
+                        INSERT INTO conversation_member_keys (conversation_id, user_uuid, encrypted_by_uuid, key_blob)
+                        VALUES (?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE encrypted_by_uuid = VALUES(encrypted_by_uuid), key_blob = VALUES(key_blob)
+                    ");
+                    $stmt->execute([$conversationId, $targetUserUuid, $currentUserUuid, $keyBlob]);
+                } else {
+                    throw $e;
+                }
+            }
             jsonSuccess(['ok' => true], 'Ключ группы сохранён');
             exit;
         }
@@ -205,6 +329,12 @@ try {
         $algorithm = trim($data['algorithm'] ?? 'ECDH-P256');
         if ($algorithm === '') {
             $algorithm = 'ECDH-P256';
+        }
+        if (!in_array($algorithm, getE2EEAlgorithms(), true)) {
+            jsonError('Алгоритм не разрешён на сервере', 400);
+        }
+        if ($algorithm === 'ECDH-P256') {
+            $algorithm = 'ECDH-P256-AES-GCM';
         }
         if ($publicKey === null) {
             jsonError('Не указан public_key', 400);
@@ -221,7 +351,7 @@ try {
         $stmt = $pdo->prepare("
             INSERT INTO user_public_keys (user_uuid, public_key_jwk, algorithm)
             VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE public_key_jwk = VALUES(public_key_jwk), algorithm = VALUES(algorithm)
+            ON DUPLICATE KEY UPDATE public_key_jwk = VALUES(public_key_jwk), updated_at = CURRENT_TIMESTAMP
         ");
         $stmt->execute([$currentUserUuid, $publicKeyJson, $algorithm]);
         jsonSuccess(['ok' => true, 'algorithm' => $algorithm], 'Публичный ключ сохранён');

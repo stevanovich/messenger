@@ -132,14 +132,15 @@
      * @returns {Promise<{ok: boolean, error?: string}>}
      */
     function enableDeviceLock(pin) {
-        if (!pin || pin.length < 4) return Promise.resolve({ ok: false, error: 'PIN не менее 4 символов' });
+        var E2EE = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.e2ee) || {};
+        if (!pin || pin.length < 4) return Promise.resolve({ ok: false, error: E2EE.pin_min_4 || 'PIN не менее 4 символов' });
         const keyPairStr = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(E2EE_STORAGE_KEY) : null;
-        if (!keyPairStr) return Promise.resolve({ ok: false, error: 'Ключи не найдены. Сначала откройте чат.' });
+        if (!keyPairStr) return Promise.resolve({ ok: false, error: E2EE.login_first || 'Ключи не найдены. Сначала откройте чат.' });
         let keyPairJson;
         try {
             keyPairJson = JSON.parse(keyPairStr);
         } catch (e) {
-            return Promise.resolve({ ok: false, error: 'Ключи не найдены. Сначала откройте чат.' });
+            return Promise.resolve({ ok: false, error: E2EE.login_first || 'Ключи не найдены. Сначала откройте чат.' });
         }
         let credId = null;
         const userUuid = typeof document !== 'undefined' && document.body && document.body.dataset && document.body.dataset.userUuid ? document.body.dataset.userUuid : 'user';
@@ -147,7 +148,7 @@
         const createOptions = {
             publicKey: {
                 challenge: challenge,
-                rp: { name: 'Мессенджер' },
+                rp: { name: E2EE.app_name || 'Мессенджер' },
                 user: {
                     id: new TextEncoder().encode(userUuid.slice(0, 64)),
                     name: userUuid,
@@ -179,7 +180,8 @@
                 return { ok: true };
             })
             .catch(function (err) {
-                return { ok: false, error: (err && err.message) ? err.message : 'Ошибка включения блокировки' };
+                var E = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.e2ee) || {};
+                return { ok: false, error: (err && err.message) ? err.message : (E.lock_enable_error || 'Ошибка включения блокировки') };
             });
     }
 
@@ -199,18 +201,19 @@
      * @returns {Promise<{ok: boolean, error?: string}>}
      */
     function unlockWithPin(pin) {
+        var E = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.e2ee) || {};
         const blob = getStorage(LOCKED_BLOB_KEY);
-        if (!blob) return Promise.resolve({ ok: false, error: 'Нет сохранённой блокировки' });
+        if (!blob) return Promise.resolve({ ok: false, error: E.no_saved_lock || 'Нет сохранённой блокировки' });
         return decryptKeyPairWithPin(blob, pin).then(function (keyPairJson) {
             if (!keyPairJson || !keyPairJson.publicKey || !keyPairJson.privateKey) {
-                return { ok: false, error: 'Неверный PIN' };
+                return { ok: false, error: E.wrong_pin || 'Неверный PIN' };
             }
             if (typeof sessionStorage !== 'undefined') {
                 sessionStorage.setItem(E2EE_STORAGE_KEY, JSON.stringify(keyPairJson));
             }
             return { ok: true };
         }).catch(function () {
-            return { ok: false, error: 'Неверный PIN' };
+            return { ok: false, error: E.wrong_pin || 'Неверный PIN' };
         });
     }
 

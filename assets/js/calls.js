@@ -1,12 +1,23 @@
 /**
  * Модуль звонков: конфиг, WebRTC (режим webrtc_only), UI входящего/активного вызова.
  * Зависит: API_BASE, apiRequest (app.js), загрузка после chat.js для доступа к данным беседы.
+ * Версия: 2025-02-12 (аватар при выкл. видео)
  */
 (function() {
     'use strict';
 
     const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || (typeof document !== 'undefined' && document.body && document.body.getAttribute('data-base-url')) || '';
     const userUuid = typeof document !== 'undefined' && document.body && document.body.dataset ? (document.body.dataset.userUuid || '') : '';
+    const C = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.calls) || {};
+    const Call = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.call) || {};
+    function callsL(key, fallback) { return (C[key] !== undefined && C[key] !== '') ? C[key] : (fallback || ''); }
+    /** Для меток с переносом строки: в PHP в одинарных кавычках \n — два символа; конвертируем в <br> для отображения. Экранирует HTML. */
+    function callsLabelBr(str) {
+        if (str == null || str === '') return '';
+        var t = String(str).replace(/\\n/g, '\n');
+        t = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        return t.replace(/\n/g, '<br>');
+    }
 
     let callConfig = null;
     let callState = {
@@ -22,6 +33,7 @@
         durationTimer: null,
         pendingInvite: null,
         pendingOffer: null,
+        incomingCallMinimized: null,
         joiningOngoingCall: false,
         groupCallId: null,
         peers: null,
@@ -49,10 +61,16 @@
         remoteScreenSharing: false,
         peerScreenSharing: null,
         facingMode: 'user',
+        callMinimized: false,
     };
 
     function getVideoConstraints() {
-        return { facingMode: callState.facingMode || 'user' };
+        var base = { facingMode: callState.facingMode || 'user' };
+        if (typeof base.width === 'undefined') {
+            base.width = { ideal: 640 };
+            base.height = { ideal: 480 };
+        }
+        return base;
     }
 
     var SPEAKING_THRESHOLD = 25;
@@ -64,7 +82,7 @@
         if (!C) return;
         try {
             ringtoneAudioContext = new C();
-            if (typeof ringtoneAudioContext.resume === 'function') {
+            if (ringtoneAudioContext.state === 'suspended' && typeof ringtoneAudioContext.resume === 'function') {
                 ringtoneAudioContext.resume().catch(function() {});
             }
         } catch (e) {}
@@ -72,15 +90,15 @@
 
     function onceUnlockAudioContext() {
         unlockRingtoneAudioContext();
-        document.removeEventListener('click', onceUnlockAudioContext);
-        document.removeEventListener('touchstart', onceUnlockAudioContext);
-        document.removeEventListener('keydown', onceUnlockAudioContext);
+        document.removeEventListener('click', onceUnlockAudioContext, true);
+        document.removeEventListener('touchstart', onceUnlockAudioContext, true);
+        document.removeEventListener('keydown', onceUnlockAudioContext, true);
     }
 
     if (typeof document !== 'undefined') {
-        document.addEventListener('click', onceUnlockAudioContext, { passive: true, once: true });
-        document.addEventListener('touchstart', onceUnlockAudioContext, { passive: true, once: true });
-        document.addEventListener('keydown', onceUnlockAudioContext, { passive: true, once: true });
+        document.addEventListener('click', onceUnlockAudioContext, { passive: true, once: true, capture: true });
+        document.addEventListener('touchstart', onceUnlockAudioContext, { passive: true, once: true, capture: true });
+        document.addEventListener('keydown', onceUnlockAudioContext, { passive: true, once: true, capture: true });
     }
 
     var MUTED_ICON_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5 5zM4.27 3L3 4.27l6 6V11c0 1.66 1.34 3 3 3 .23 0 .44-.03.65-.08L19.73 21 21 19.73l-9-9L4.27 3z"/></svg>';
@@ -214,7 +232,7 @@
         hideRecordingBanner();
         hideIncomingModal();
         var endCallModal = document.getElementById('modalEndCallChoice');
-        if (endCallModal) endCallModal.style.display = 'none';
+        if (endCallModal) endCallModal.classList.add('is-hidden');
         hideCallPanel();
         hideGroupCallPanel();
     }
@@ -648,9 +666,9 @@
         if (btn) {
             btn.classList.toggle('btn-call-off', !rec);
             btn.classList.toggle('btn-call-on', rec);
-            btn.title = rec ? 'Запись вкл.' : 'Запись выкл.';
+            btn.title = rec ? callsL('recording_on', 'Запись вкл.') : callsL('recording_off', 'Запись выкл.');
             var lbl = btn.querySelector('.btn-call-label');
-            if (lbl) lbl.textContent = rec ? 'Запись вкл.' : 'Запись выкл.';
+            if (lbl) lbl.textContent = rec ? callsL('recording_on', 'Запись вкл.') : callsL('recording_off', 'Запись выкл.');
         }
     }
 
@@ -676,7 +694,7 @@
             btn.classList.toggle('btn-call-off', !rec);
             btn.classList.toggle('btn-call-on', rec);
             var lbl = btn.querySelector('.btn-call-label');
-            if (lbl) lbl.textContent = rec ? 'Запись вкл.' : 'Запись выкл.';
+            if (lbl) lbl.textContent = rec ? callsL('recording_on', 'Запись вкл.') : callsL('recording_off', 'Запись выкл.');
         }
     }
 
@@ -696,7 +714,7 @@
         var targetBefore = targetInner ? targetInner.querySelector('.call-panel-actions-bar') : null;
         if (banner.parentNode) banner.parentNode.removeChild(banner);
         if (targetInner && targetBefore) targetInner.insertBefore(banner, targetBefore);
-        banner.textContent = text || 'Идёт запись';
+        banner.textContent = text || callsL('recording_banner', 'Идёт запись');
         banner.style.display = 'block';
     }
 
@@ -738,21 +756,22 @@
     function playRingtoneBeep() {
         if (!ringtoneAudioContext || ringtoneAudioContext.state === 'closed') return;
         if (ringtoneAudioContext.state === 'suspended') {
-            ringtoneAudioContext.resume().then(function() { playBeepWithContext(ringtoneAudioContext); }).catch(function() {});
             return;
         }
         playBeepWithContext(ringtoneAudioContext);
     }
 
     function showIncomingModal(data) {
+        ensureCallUI();
         const modal = document.getElementById('modalIncomingCall');
         if (!modal) return;
+        callState.incomingCallMinimized = null;
         stopIncomingCallAlerts();
         const nameEl = document.getElementById('incomingCallName');
         const typeEl = document.getElementById('incomingCallType');
         const avatarEl = document.getElementById('incomingCallAvatar');
-        const callerName = (data.caller_name != null) ? String(data.caller_name) : 'Входящий звонок';
-        const callType = data.with_video ? 'Видеозвонок' : 'Голосовой звонок';
+        const callerName = (data.caller_name != null) ? String(data.caller_name) : callsL('incoming_call', 'Входящий звонок');
+        const callType = data.with_video ? (Call.video || 'Видеозвонок') : (Call.voice || 'Голосовой звонок');
         if (nameEl) nameEl.textContent = escapeHtml(callerName);
         if (typeEl) typeEl.textContent = callType;
         if (avatarEl) {
@@ -764,7 +783,7 @@
                 avatarEl.innerHTML = '<span class="incoming-call-avatar-placeholder">' + escapeHtml(letter) + '</span>';
             }
         }
-        modal.style.display = 'flex';
+        modal.classList.remove('is-hidden');
         modal.dataset.callId = (data.call_id != null) ? String(data.call_id) : '';
         modal.dataset.callerUuid = (data.caller_uuid != null) ? data.caller_uuid : '';
         modal.dataset.conversationId = (data.conversation_id != null) ? String(data.conversation_id) : '';
@@ -772,7 +791,7 @@
 
         if (document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             try {
-                incomingCallNotification = new Notification('Входящий звонок', {
+                incomingCallNotification = new Notification(callsL('incoming_call', 'Входящий звонок'), {
                     body: callerName + ' • ' + callType,
                     icon: (document.querySelector('link[rel="icon"]') && document.querySelector('link[rel="icon"]').href) || undefined,
                     tag: 'incoming-call-' + (data.call_id || ''),
@@ -787,8 +806,9 @@
 
     function hideIncomingModal() {
         const modal = document.getElementById('modalIncomingCall');
-        if (modal) modal.style.display = 'none';
+        if (modal) modal.classList.add('is-hidden');
         stopIncomingCallAlerts();
+        callState.incomingCallMinimized = null;
     }
 
     function stopSpeakingMonitor() {
@@ -939,28 +959,61 @@
     function getPeerDisplayInfo(peerUuidOrKey) {
         if (!peerUuidOrKey) return { name: '—', avatar: null };
         if (String(peerUuidOrKey).indexOf('guest_') === 0) {
-            var name = (callState.guestDisplayNames && callState.guestDisplayNames[peerUuidOrKey]) || 'Гость';
+            var name = (callState.guestDisplayNames && callState.guestDisplayNames[peerUuidOrKey]) || callsL('guest', 'Гость');
             return { name: name, avatar: null };
         }
         var list = (window.chatModule && typeof window.chatModule.conversations === 'function') ? window.chatModule.conversations() : [];
         var conv = list && list.find(function(c) { return c.other_user && c.other_user.uuid === peerUuidOrKey; });
         if (conv && conv.other_user) {
-            var name = (conv.other_user.display_name || conv.other_user.username || '').trim() || 'Собеседник';
+            var name = (conv.other_user.display_name || conv.other_user.username || '').trim() || callsL('participant', 'Участник');
             return { name: name, avatar: conv.other_user.avatar || null };
         }
         var contacts = (window.chatModule && typeof window.chatModule.contacts === 'function') ? window.chatModule.contacts() : [];
         var contact = contacts && contacts.find(function(c) { return c.uuid === peerUuidOrKey; });
         if (contact) {
-            var n = (contact.display_name || contact.username || '').trim() || 'Участник';
+            var n = (contact.display_name || contact.username || '').trim() || callsL('participant', 'Участник');
             return { name: n, avatar: contact.avatar || null };
         }
-        return { name: 'Участник', avatar: null };
+        return { name: callsL('participant', 'Участник'), avatar: null };
     }
 
     function getGroupCallTitle() {
         var list = (window.chatModule && typeof window.chatModule.conversations === 'function') ? window.chatModule.conversations() : [];
         var conv = list && list.find(function(c) { return c.id === callState.conversationId; });
-        return (conv && (conv.name || (conv.other_user && (conv.other_user.display_name || conv.other_user.username)))) ? conv.name || (conv.other_user.display_name || conv.other_user.username) : 'Групповой звонок';
+        return (conv && (conv.name || (conv.other_user && (conv.other_user.display_name || conv.other_user.username)))) ? conv.name || (conv.other_user.display_name || conv.other_user.username) : callsL('group_call_title', 'Групповой звонок');
+    }
+
+    /** Возвращает true, если у нас есть локальный видео-трек и он включён (камера вкл). */
+    function isLocalCameraOn() {
+        if (!callState.localStream) return false;
+        var vt = callState.localStream.getVideoTracks()[0];
+        return !!(vt && vt.enabled);
+    }
+
+    /** Обновляет только видимость своего превью (PIP) в звонке 1-на-1. Не трогает блок с видео собеседника. */
+    function updateLocalPipVisibility1v1() {
+        var pip = document.getElementById('callPanelLocalPip');
+        var localV = document.getElementById('callPanelLocalVideo');
+        var track = callState.localStream && callState.localStream.getVideoTracks()[0];
+        var on = !!(track && track.enabled);
+        if (localV) {
+            localV.srcObject = on ? callState.localStream : null;
+            if (on) localV.play().catch(function() {});
+        }
+        if (pip) pip.style.display = on ? '' : 'none';
+    }
+
+    /** Обновляет только видимость своего превью в групповом звонке. Не трогает видео других участников. */
+    function updateLocalPipVisibilityGroup() {
+        var localV = document.querySelector('#groupCallPanel .group-call-local-video');
+        var pipWrap = document.getElementById('groupCallLocalPipWrap');
+        var track = callState.localStream && callState.localStream.getVideoTracks()[0];
+        var on = !!(track && track.enabled);
+        if (localV) {
+            localV.srcObject = on ? callState.localStream : null;
+            if (on) localV.play().catch(function() {});
+        }
+        if (pipWrap) pipWrap.style.display = on ? '' : 'none';
     }
 
     function updateCallPanelVideoUI(withVideo) {
@@ -971,7 +1024,19 @@
         var wrap = document.getElementById('callPanelVideoWrap');
         if (wrap) wrap.style.display = withVideo ? 'block' : 'none';
         var audioView = document.getElementById('callPanelAudioView');
-        if (audioView) audioView.style.display = withVideo ? 'none' : 'flex';
+        var videoOff = false;
+        if (withVideo && callState.remoteStream) {
+            var vt = callState.remoteStream.getVideoTracks()[0];
+            videoOff = !callState.remoteScreenSharing && (!vt || vt.muted);
+        }
+        if (audioView) {
+            if (!withVideo) {
+                audioView.style.display = 'flex';
+            } else {
+                audioView.style.display = videoOff ? 'flex' : 'none';
+            }
+        }
+        panel.classList.toggle('call-panel-remote-video-off', !!videoOff);
         var localV = document.getElementById('callPanelLocalVideo');
         if (localV && callState.localStream) {
             if (withVideo) {
@@ -981,14 +1046,75 @@
                 localV.srcObject = null;
             }
         } else if (localV && !withVideo) localV.srcObject = null;
+        var pip = document.getElementById('callPanelLocalPip');
+        if (pip && withVideo) pip.style.display = isLocalCameraOn() ? '' : 'none';
     }
 
     function setCallPanelDurationText(text) {
-        var ids = ['callPanelDuration', 'callPanelDurationAfterStatus', 'callPanelDurationInVideo'];
+        var ids = ['callPanelDuration', 'callPanelDurationAfterStatus', 'callPanelDurationInVideo', 'callMinimizedDuration'];
         ids.forEach(function(id) {
             var el = document.getElementById(id);
             if (el) el.textContent = text;
         });
+    }
+
+    function getCallDisplayName() {
+        if (callState.groupCallId) return getGroupCallTitle();
+        return getPeerDisplayInfo(callState.peerUuid).name;
+    }
+
+    function updateCallMinimizedBar() {
+        var bar = document.getElementById('callMinimizedBar');
+        if (!bar || !bar.classList.contains('call-minimized-bar-visible')) return;
+        var nameEl = document.getElementById('callMinimizedName');
+        if (nameEl) nameEl.textContent = getCallDisplayName();
+        if (callState.durationStart) {
+            var sec = Math.floor((Date.now() - callState.durationStart) / 1000);
+            var m = Math.floor(sec / 60);
+            var s = sec % 60;
+            setCallPanelDurationText(m + ':' + (s < 10 ? '0' : '') + s);
+        }
+    }
+
+    function showCallMinimizedBar() {
+        var bar = document.getElementById('callMinimizedBar');
+        if (!bar) return;
+        var nameEl = document.getElementById('callMinimizedName');
+        if (nameEl) nameEl.textContent = getCallDisplayName();
+        updateCallMinimizedBar();
+        bar.classList.add('call-minimized-bar-visible');
+        var mc = document.querySelector('.messenger-container');
+        if (mc) mc.classList.add('has-call-minimized-bar');
+    }
+
+    function hideCallMinimizedBar() {
+        var bar = document.getElementById('callMinimizedBar');
+        if (bar) bar.classList.remove('call-minimized-bar-visible');
+        var mc = document.querySelector('.messenger-container');
+        if (mc) mc.classList.remove('has-call-minimized-bar');
+        callState.callMinimized = false;
+    }
+
+    function minimizeActiveCall() {
+        if (!callState.callId && !callState.groupCallId) return;
+        callState.callMinimized = true;
+        var panel = document.getElementById('callPanel');
+        var groupPanel = document.getElementById('groupCallPanel');
+        if (callState.groupCallId && groupPanel) {
+            groupPanel.classList.add('call-panel-minimized');
+        } else if (panel) {
+            panel.classList.add('call-panel-minimized');
+        }
+        showCallMinimizedBar();
+    }
+
+    function expandActiveCall() {
+        callState.callMinimized = false;
+        var panel = document.getElementById('callPanel');
+        var groupPanel = document.getElementById('groupCallPanel');
+        if (panel) panel.classList.remove('call-panel-minimized');
+        if (groupPanel) groupPanel.classList.remove('call-panel-minimized');
+        hideCallMinimizedBar();
     }
 
     /**
@@ -1011,7 +1137,7 @@
     function setCallPanelWaitingState(waiting) {
         var wrap = document.getElementById('callPanelPeerAvatarWrap');
         if (wrap) wrap.classList.toggle('call-panel-avatar-waiting', !!waiting);
-        if (waiting) setCallPanelDurationText('Ожидание ответа');
+        if (waiting) setCallPanelDurationText(callsL('waiting_answer', 'Ожидание ответа'));
     }
 
     function updateCallPanelPeerAvatar() {
@@ -1033,13 +1159,16 @@
         }
         var wrap = document.getElementById('callPanelPeerAvatarWrap');
         if (wrap) wrap.classList.toggle('call-panel-avatar-muted', !!audioMuted);
-        var videoText = 'Камера выкл';
-        if (callState.remoteStream) {
-            var vt = callState.remoteStream.getVideoTracks();
-            if (vt && vt.length > 0 && !vt[0].muted) videoText = 'Камера вкл';
-        }
         var statusEl = document.getElementById('callPanelPeerAudioStatus');
-        if (statusEl) statusEl.textContent = (audioMuted ? 'Микрофон выкл' : 'Микрофон вкл') + ', ' + videoText;
+        if (statusEl) {
+            if (!callState.remoteStream) {
+                statusEl.innerHTML = '';
+            } else {
+                var micLabel = audioMuted ? callsL('mic_off', 'Микрофон выкл.') : callsL('mic_on', 'Микрофон вкл.');
+                var micClass = audioMuted ? 'peer-mic-off' : 'peer-mic-on';
+                statusEl.innerHTML = '<span class="peer-mic-icon ' + micClass + '" role="img" aria-label="' + escapeHtml(micLabel) + '" title="' + escapeHtml(micLabel) + '"></span>';
+            }
+        }
     }
 
     function showCallPanel(withVideo) {
@@ -1048,9 +1177,7 @@
         panel.classList.toggle('call-panel-with-video', !!withVideo);
         panel.classList.toggle('call-panel-audio', !withVideo);
         var wrap = document.getElementById('callPanelVideoWrap');
-        if (wrap) wrap.style.display = withVideo ? 'block' : 'none';
-        var audioView = document.getElementById('callPanelAudioView');
-        if (audioView) audioView.style.display = withVideo ? 'none' : 'flex';
+        if (wrap) wrap.style.display = 'block';
         var titleEl = document.getElementById('callPanelTitle');
         var peerName = getPeerDisplayInfo(callState.peerUuid).name;
         if (titleEl) titleEl.textContent = peerName;
@@ -1058,7 +1185,7 @@
         if (remoteNameEl) remoteNameEl.textContent = peerName;
         var peerNameEl = document.getElementById('callPanelPeerName');
         if (peerNameEl) peerNameEl.textContent = peerName;
-        setCallPanelDurationText(callState.remoteStream ? '0:00' : 'Ожидание ответа');
+        setCallPanelDurationText(callState.remoteStream ? '0:00' : callsL('waiting_answer', 'Ожидание ответа'));
         setCallPanelWaitingState(!callState.remoteStream);
         if (callState.remoteStream) startCallDurationTimer();
         updateCallPanelPeerAvatar();
@@ -1067,7 +1194,27 @@
         var leftSection = panel.querySelector('.call-panel-actions-left');
         if (leftSection) leftSection.style.display = callState.groupCallId ? 'none' : 'flex';
         panel.classList.add('call-panel-visible');
-        if (withVideo) updateCallPanelRemoteStatus();
+        if (withVideo) {
+            updateCallPanelRemoteStatus();
+            updateCallPanelVideoUI(true);
+            var localV = document.getElementById('callPanelLocalVideo');
+            if (localV && callState.localStream && callState.localStream.getVideoTracks().length > 0) {
+                localV.muted = true;
+                var stream = callState.localStream;
+                localV.srcObject = stream;
+                function ensureVideoPlay() {
+                    if (localV.srcObject === stream) localV.play().catch(function() {});
+                }
+                requestAnimationFrame(function() { requestAnimationFrame(ensureVideoPlay); });
+                setTimeout(ensureVideoPlay, 350);
+                panel.addEventListener('transitionend', function onTransitionEnd(ev) {
+                    if (ev.propertyName === 'transform') {
+                        panel.removeEventListener('transitionend', onTransitionEnd);
+                        ensureVideoPlay();
+                    }
+                });
+            }
+        }
         updateVideoButtonStates();
         updateScreenShareButtonStates();
         updateRecordingUI();
@@ -1075,11 +1222,17 @@
 
     function hideCallPanel() {
         const panel = document.getElementById('callPanel');
-        if (panel) panel.classList.remove('call-panel-visible');
+        if (panel) {
+            panel.classList.remove('call-panel-visible');
+            panel.classList.remove('call-panel-minimized');
+        }
+        hideCallMinimizedBar();
         const localV = document.getElementById('callPanelLocalVideo');
         const remoteV = document.getElementById('callPanelRemoteVideo');
+        const remoteA = document.getElementById('callPanelRemoteAudio');
         if (localV && localV.srcObject) { localV.srcObject = null; }
         if (remoteV && remoteV.srcObject) { remoteV.srcObject = null; }
+        if (remoteA && remoteA.srcObject) { remoteA.srcObject = null; }
     }
 
     function getGroupCallGrid() {
@@ -1116,7 +1269,7 @@
                 ? '<div class="group-call-avatar-peer"><img src="' + escapeHtml(info.avatar) + '" alt=""></div>'
                 : '<div class="group-call-avatar-peer"><span class="group-call-avatar-placeholder">' + escapeHtml(letter) + '</span></div>';
             var mutedSvg = '<span class="group-call-avatar-muted-indicator" aria-hidden="true">' + MUTED_ICON_SVG + '</span>';
-            var audioStatus = audioMuted ? 'Аудио выкл' : 'Аудио вкл';
+            var audioStatus = audioMuted ? callsL('audio_off', 'Аудио выкл') : callsL('audio_on', 'Аудио вкл');
             slot.innerHTML = avatarHtml + mutedSvg + '<span class="group-call-avatar-slot-name">' + escapeHtml(info.name) + '</span><span class="group-call-avatar-slot-audio-status">' + escapeHtml(audioStatus) + '</span>';
             container.appendChild(slot);
         });
@@ -1137,15 +1290,37 @@
         callState.durationStart = Date.now();
         if (callState.durationTimer) clearInterval(callState.durationTimer);
         callState.durationTimer = setInterval(function() {
-            const el = panel.querySelector('.group-call-duration');
-            if (!el) return;
+            if (!callState.durationStart) return;
             const sec = Math.floor((Date.now() - callState.durationStart) / 1000);
             const m = Math.floor(sec / 60);
             const s = sec % 60;
-            el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+            const text = m + ':' + (s < 10 ? '0' : '') + s;
+            const el = panel.querySelector('.group-call-duration');
+            if (el) el.textContent = text;
+            var minEl = document.getElementById('callMinimizedDuration');
+            if (minEl && callState.callMinimized) minEl.textContent = text;
         }, 1000);
         updateGroupCallAudioAvatars();
         panel.classList.add('group-call-visible');
+        if (withVideo) {
+            var localV = panel.querySelector('.group-call-local-video');
+            if (localV && callState.localStream && callState.localStream.getVideoTracks().length > 0) {
+                localV.muted = true;
+                var stream = callState.localStream;
+                localV.srcObject = stream;
+                function ensureVideoPlay() {
+                    if (localV.srcObject === stream) localV.play().catch(function() {});
+                }
+                requestAnimationFrame(function() { requestAnimationFrame(ensureVideoPlay); });
+                setTimeout(ensureVideoPlay, 350);
+                panel.addEventListener('transitionend', function onTransitionEnd(ev) {
+                    if (ev.propertyName === 'transform') {
+                        panel.removeEventListener('transitionend', onTransitionEnd);
+                        ensureVideoPlay();
+                    }
+                });
+            }
+        }
         updateVideoButtonStates();
         updateScreenShareButtonStates();
         updateGroupRecordingUI();
@@ -1156,6 +1331,8 @@
         const panel = document.getElementById('groupCallPanel');
         if (!panel) return;
         panel.classList.remove('group-call-visible');
+        panel.classList.remove('call-panel-minimized');
+        hideCallMinimizedBar();
         const grid = panel.querySelector('.group-call-grid');
         if (grid) {
             grid.querySelectorAll('.group-call-remote-slot').forEach(function(w) {
@@ -1181,7 +1358,7 @@
         video.setAttribute('autoplay', '');
         const nameLabel = document.createElement('span');
         nameLabel.className = 'group-call-remote-slot-name';
-        nameLabel.textContent = getPeerDisplayInfo(peerKey).name || (String(peerKey).indexOf('guest_') === 0 ? 'Гость' : 'Участник');
+        nameLabel.textContent = getPeerDisplayInfo(peerKey).name || (String(peerKey).indexOf('guest_') === 0 ? callsL('guest', 'Гость') : callsL('participant', 'Участник'));
         const statusLabel = document.createElement('span');
         statusLabel.className = 'group-call-remote-slot-status';
         wrap.appendChild(video);
@@ -1196,24 +1373,18 @@
         if (!wrap) return;
         const statusEl = wrap.querySelector('.group-call-remote-slot-status');
         if (!statusEl) return;
-        let audioText = 'Аудио выкл';
-        let videoText = 'Видео выкл';
+        let audioText = callsL('audio_off', 'Аудио выкл');
         const signalingMuted = callState.peerMutedMap && callState.peerMutedMap.has(peerKey) ? callState.peerMutedMap.get(peerKey) : null;
-        if (signalingMuted === true) audioText = 'Аудио выкл';
-        else if (signalingMuted === false) audioText = 'Аудио вкл';
+        if (signalingMuted === true) audioText = callsL('audio_off', 'Аудио выкл');
+        else if (signalingMuted === false) audioText = callsL('audio_on', 'Аудио вкл');
         else {
             const videoEl = wrap.querySelector('video');
             if (videoEl && videoEl.srcObject) {
                 const at = videoEl.srcObject.getAudioTracks();
-                if (at && at.length > 0 && !at[0].muted) audioText = 'Аудио вкл';
+                if (at && at.length > 0 && !at[0].muted) audioText = callsL('audio_on', 'Аудио вкл');
             }
         }
-        const videoEl = wrap.querySelector('video');
-        if (videoEl && videoEl.srcObject) {
-            const vt = videoEl.srcObject.getVideoTracks();
-            if (vt && vt.length > 0 && !vt[0].muted) videoText = 'Видео вкл';
-        }
-        statusEl.textContent = audioText + ', ' + videoText;
+        statusEl.textContent = audioText;
     }
 
     function removeGroupCallRemoteSlot(peerKey) {
@@ -1291,27 +1462,28 @@
         const body = document.body;
         const incoming = document.createElement('div');
         incoming.id = 'modalIncomingCall';
-        incoming.className = 'modal modal-incoming-call';
-        incoming.style.display = 'none';
-        incoming.innerHTML = '<div class="modal-content"><div class="modal-header"><h3>Входящий вызов</h3></div><div class="modal-body"><div class="incoming-call-avatar-wrap" id="incomingCallAvatarWrap"><div class="incoming-call-avatar" id="incomingCallAvatar"><span class="incoming-call-avatar-placeholder" id="incomingCallAvatarPlaceholder">?</span></div></div><p class="incoming-call-name" id="incomingCallName">—</p><p class="incoming-call-type" id="incomingCallType">Голосовой звонок</p><div class="modal-actions incoming-call-actions"><button type="button" class="btn btn-danger btn-call-decline" id="btnIncomingDecline" aria-label="Отклонить">Отклонить</button><button type="button" class="btn btn-primary btn-call-accept" id="btnIncomingAccept" aria-label="Принять">Принять</button></div></div></div>';
+        incoming.className = 'modal modal-incoming-call modal-incoming-call-fullscreen is-hidden';
+        incoming.setAttribute('role', 'dialog');
+        incoming.setAttribute('aria-modal', 'true');
+        incoming.innerHTML = '<div class="modal-content modal-incoming-call-content"><div class="modal-header"><h3>' + callsL('incoming_title', 'Входящий вызов') + '</h3></div><div class="modal-body"><div class="incoming-call-avatar-wrap" id="incomingCallAvatarWrap"><div class="incoming-call-avatar" id="incomingCallAvatar"><span class="incoming-call-avatar-placeholder" id="incomingCallAvatarPlaceholder">?</span></div></div><p class="incoming-call-name" id="incomingCallName">—</p><p class="incoming-call-type" id="incomingCallType">' + (Call.voice || 'Голосовой звонок') + '</p><div class="modal-actions incoming-call-actions"><button type="button" class="btn btn-secondary btn-call-minimize" id="btnIncomingMinimize" aria-label="' + callsL('minimize', 'Свернуть') + '">' + callsL('minimize', 'Свернуть') + '</button><button type="button" class="btn btn-danger btn-call-decline" id="btnIncomingDecline" aria-label="' + callsL('decline', 'Отклонить') + '">' + callsL('decline', 'Отклонить') + '</button><button type="button" class="btn btn-primary btn-call-accept" id="btnIncomingAccept" aria-label="' + callsL('accept', 'Принять') + '">' + callsL('accept', 'Принять') + '</button></div></div></div>';
         body.appendChild(incoming);
 
         const panel = document.createElement('div');
         panel.id = 'callPanel';
         panel.className = 'call-panel';
-        panel.innerHTML = '<div class="call-panel-inner">' +
+        panel.innerHTML = '<button type="button" class="call-panel-minimize-corner" id="btnCallMinimize" title="' + callsL('minimize', 'Свернуть') + '" aria-label="' + callsL('minimize', 'Свернуть') + '">−</button>' +
+            '<div class="call-panel-inner">' +
             '<div class="call-panel-header"><span class="call-panel-title" id="callPanelTitle">—</span><span class="call-panel-duration" id="callPanelDuration">0:00</span></div>' +
             '<div class="call-panel-content">' +
-            '<div class="call-panel-audio-view" id="callPanelAudioView"><div class="call-panel-avatar-peer-wrap" id="callPanelPeerAvatarWrap"><div class="call-panel-avatar-peer" id="callPanelPeerAvatar"><span class="call-panel-avatar-peer-placeholder" id="callPanelPeerAvatarPlaceholder">?</span></div></div><span class="call-panel-peer-name" id="callPanelPeerName"></span><span class="call-panel-peer-status" id="callPanelPeerAudioStatus"></span><span class="call-panel-duration-after-status" id="callPanelDurationAfterStatus">0:00</span></div>' +
-            '<div class="call-panel-video-wrap" id="callPanelVideoWrap"><video id="callPanelRemoteVideo" playsinline autoplay></video><div class="call-panel-remote-name-wrap"><span class="call-panel-remote-name" id="callPanelRemoteName"></span><span class="call-panel-remote-status" id="callPanelRemoteStatus"></span><span class="call-panel-remote-duration" id="callPanelDurationInVideo">0:00</span></div><div class="call-panel-local-pip" id="callPanelLocalPip"><video id="callPanelLocalVideo" playsinline muted></video><button type="button" class="btn-call-switch-camera-on-pip" id="btnCallSwitchCamera" title="Переключить камеру" aria-label="Переключить камеру" style="display:none">🔄</button></div></div>' +
+            '<div class="call-panel-video-wrap" id="callPanelVideoWrap"><div class="call-panel-audio-view" id="callPanelAudioView"><audio id="callPanelRemoteAudio" autoplay playsinline class="call-panel-audio-visually-hidden"></audio><div class="call-panel-avatar-peer-wrap" id="callPanelPeerAvatarWrap"><div class="call-panel-avatar-peer" id="callPanelPeerAvatar"><span class="call-panel-avatar-peer-placeholder" id="callPanelPeerAvatarPlaceholder">?</span></div></div><div class="call-panel-peer-status-name"><span class="call-panel-peer-status" id="callPanelPeerAudioStatus"></span><span class="call-panel-peer-name" id="callPanelPeerName"></span></div><span class="call-panel-duration-after-status" id="callPanelDurationAfterStatus">0:00</span></div><video id="callPanelRemoteVideo" playsinline autoplay></video><div class="call-panel-remote-name-wrap"><span class="call-panel-remote-status-name"><span class="call-panel-remote-status" id="callPanelRemoteStatus"></span><span class="call-panel-remote-name" id="callPanelRemoteName"></span></span><span class="call-panel-remote-duration" id="callPanelDurationInVideo">0:00</span></div><div class="call-panel-local-pip" id="callPanelLocalPip"><video id="callPanelLocalVideo" playsinline muted></video><button type="button" class="btn-call-switch-camera-on-pip" id="btnCallSwitchCamera" title="' + callsL('switch_camera', 'Переключить камеру') + '" aria-label="' + callsL('switch_camera', 'Переключить камеру') + '" class="is-hidden">🔄</button></div></div>' +
             '</div>' +
             '<div class="call-panel-actions-bar">' +
-            '<div class="call-panel-actions-left"><div class="call-panel-actions-group call-panel-actions-participants"><button type="button" class="btn-call-toggle" id="btnCallAddParticipant" title="Пригласить" aria-label="Пригласить" style="display:none">👤+<span class="btn-call-label">Пригласить</span></button></div></div>' +
+            '<div class="call-panel-actions-left"><div class="call-panel-actions-group call-panel-actions-participants"><button type="button" class="btn-call-toggle" id="btnCallAddParticipant" title="' + callsL('invite', 'Пригласить') + '" aria-label="' + callsL('invite', 'Пригласить') + '" class="is-hidden">👤+<span class="btn-call-label">' + callsL('invite', 'Пригласить') + '</span></button></div></div>' +
             '<div class="call-panel-actions-center">' +
-            '<div class="call-panel-actions-group call-panel-actions-media"><button type="button" class="btn-call-toggle btn-call-mute" id="btnCallMute" title="Микрофон выкл." aria-label="Микрофон">🎤<span class="btn-call-label">Микрофон\nвыкл.</span></button><button type="button" class="btn-call-toggle btn-call-video" id="btnCallVideo" title="Камера выкл." aria-label="Камера">📹<span class="btn-call-label">Камера\nвыкл.</span></button><button type="button" class="btn-call-toggle btn-call-screenshare" id="btnCallShareScreen" title="Не делимся экраном" aria-label="Экран" style="display:none">🖥️<span class="btn-call-label">Не делимся\nэкраном</span></button></div>' +
-            '<div class="call-panel-actions-group call-panel-actions-recording"><div class="call-panel-recording-wrap" id="callPanelRecordingWrap" title="Запись сохраняется на ваше устройство после нажатия «Остановить запись»"><div class="call-panel-recording-start-wrap" id="callPanelRecordingStartWrap"><button type="button" class="btn-call-toggle btn-call-record call-recording-desktop" id="btnCallRecord" title="Запись выкл." aria-label="Запись">⏺<span class="btn-call-label">Запись выкл.</span></button><div class="call-recording-mobile-wrap"><button type="button" class="btn-call-toggle btn-call-record" id="btnCallRecordMobile" aria-label="Запись">⏺</button><div class="call-recording-mobile-dropdown" id="callRecordingMobileDropdown"><button type="button" class="call-recording-option" data-type="audio">Только аудио</button><button type="button" class="call-recording-option" data-type="video">Аудио + Видео</button></div></div></div><button type="button" class="btn-call-toggle btn-call-recording-stop" id="btnCallRecordingStop" title="Остановить запись" aria-label="Остановить запись" style="display:none">● Остановить</button></div></div>' +
+            '<div class="call-panel-actions-group call-panel-actions-media"><button type="button" class="btn-call-toggle btn-call-audio" id="btnCallMute" title="' + callsL('mic_off', 'Микрофон выкл.') + '" aria-label="' + callsL('microphone', 'Микрофон') + '">🎤<span class="btn-call-label">' + callsL('mic_off_label', 'Микрофон выкл.') + '</span></button><button type="button" class="btn-call-toggle btn-call-video" id="btnCallVideo" title="' + callsL('camera_off', 'Камера выкл.') + '" aria-label="' + callsL('camera', 'Камера') + '">📹<span class="btn-call-label">' + callsLabelBr(callsL('camera_off_label', 'Камера\nвыкл.')) + '</span></button><button type="button" class="btn-call-toggle btn-call-screenshare" id="btnCallShareScreen" title="' + callsL('screen_not_sharing', 'Не делимся экраном') + '" aria-label="' + callsL('screen', 'Экран') + '" class="is-hidden">🖥️<span class="btn-call-label">' + callsLabelBr(callsL('screen_not_sharing_label', 'Не делимся\nэкраном')) + '</span></button></div>' +
+            '<div class="call-panel-actions-group call-panel-actions-recording"><div class="call-panel-recording-wrap" id="callPanelRecordingWrap" title="' + callsL('recording_saving_hint', 'Запись сохраняется на ваше устройство после нажатия «Остановить запись»') + '"><div class="call-panel-recording-start-wrap" id="callPanelRecordingStartWrap"><button type="button" class="btn-call-toggle btn-call-record call-recording-desktop" id="btnCallRecord" title="' + callsL('recording_off', 'Запись выкл.') + '" aria-label="' + callsL('recording', 'Запись') + '">⏺<span class="btn-call-label">' + callsL('recording_off', 'Запись выкл.') + '</span></button><div class="call-recording-mobile-wrap"><button type="button" class="btn-call-toggle btn-call-record" id="btnCallRecordMobile" aria-label="' + callsL('recording', 'Запись') + '">⏺</button><div class="call-recording-mobile-dropdown" id="callRecordingMobileDropdown"><button type="button" class="call-recording-option" data-type="audio">' + callsL('recording_only_audio', 'Только аудио') + '</button><button type="button" class="call-recording-option" data-type="video">' + callsL('recording_audio_video', 'Аудио + Видео') + '</button></div></div></div><button type="button" class="btn-call-toggle btn-call-recording-stop" id="btnCallRecordingStop" title="' + callsL('stop_recording', 'Остановить запись') + '" aria-label="' + callsL('stop_recording', 'Остановить запись') + '" class="is-hidden">' + callsL('stop_recording_btn', '● Остановить') + '</button></div></div>' +
             '</div>' +
-            '<div class="call-panel-actions-right"><div class="call-panel-actions-group call-panel-actions-end"><button type="button" class="btn-call-hangup" id="btnCallHangup" title="Закончить звонок" aria-label="Закончить звонок">📞<span class="btn-call-label">Закончить звонок</span></button></div></div>' +
+            '<div class="call-panel-actions-right"><div class="call-panel-actions-group call-panel-actions-end"><button type="button" class="btn-call-hangup" id="btnCallHangup" title="' + callsL('end_call', 'Закончить звонок') + '" aria-label="' + callsL('end_call', 'Закончить звонок') + '">📞<span class="btn-call-label">' + callsL('end_call', 'Закончить звонок') + '</span></button></div></div>' +
             '</div></div>';
         body.appendChild(panel);
         initCallPanelPiPDrag();
@@ -1319,39 +1491,82 @@
         var groupPanel = document.createElement('div');
         groupPanel.id = 'groupCallPanel';
         groupPanel.className = 'group-call-panel';
-        groupPanel.innerHTML = '<div class="group-call-inner">' +
-            '<div class="group-call-header"><span class="group-call-title" id="groupCallTitle">Групповой звонок</span><span class="group-call-duration" id="groupCallDuration">0:00</span></div>' +
+        groupPanel.innerHTML = '<button type="button" class="call-panel-minimize-corner" id="btnGroupCallMinimize" title="' + callsL('minimize', 'Свернуть') + '" aria-label="' + callsL('minimize', 'Свернуть') + '">−</button>' +
+            '<div class="group-call-inner">' +
+            '<div class="group-call-header"><span class="group-call-title" id="groupCallTitle">' + callsL('group_call_title', 'Групповой звонок') + '</span><span class="group-call-duration" id="groupCallDuration">0:00</span></div>' +
             '<div class="group-call-content">' +
             '<div class="group-call-audio-view" id="groupCallAudioView"></div>' +
-            '<div class="group-call-video-wrap"><div class="group-call-video-area"><div class="group-call-grid"></div></div><div class="group-call-local-pip-wrap" id="groupCallLocalPipWrap"><video class="group-call-local-video" playsinline muted></video><button type="button" class="btn-call-switch-camera-on-pip" id="btnGroupCallSwitchCamera" title="Переключить камеру" aria-label="Переключить камеру" style="display:none">🔄</button></div></div>' +
+            '<div class="group-call-video-wrap"><div class="group-call-video-area"><div class="group-call-grid"></div></div><div class="group-call-local-pip-wrap" id="groupCallLocalPipWrap"><video class="group-call-local-video" playsinline muted></video><button type="button" class="btn-call-switch-camera-on-pip" id="btnGroupCallSwitchCamera" title="' + callsL('switch_camera', 'Переключить камеру') + '" aria-label="' + callsL('switch_camera', 'Переключить камеру') + '" class="is-hidden">🔄</button></div></div>' +
             '</div>' +
             '<div class="call-panel-actions-bar">' +
-            '<div class="call-panel-actions-left"><div class="call-panel-actions-group call-panel-actions-participants"><button type="button" class="btn-call-toggle" id="btnGroupCallParticipants" title="Пригласить" aria-label="Пригласить">👥<span class="btn-call-label">Пригласить</span></button></div></div>' +
+            '<div class="call-panel-actions-left"><div class="call-panel-actions-group call-panel-actions-participants"><button type="button" class="btn-call-toggle" id="btnGroupCallParticipants" title="' + callsL('invite', 'Пригласить') + '" aria-label="' + callsL('invite', 'Пригласить') + '">👥<span class="btn-call-label">' + callsL('invite', 'Пригласить') + '</span></button></div></div>' +
             '<div class="call-panel-actions-center">' +
-            '<div class="call-panel-actions-group call-panel-actions-media"><button type="button" class="btn-call-toggle btn-call-mute" id="btnGroupCallMute" title="Микрофон выкл." aria-label="Микрофон">🎤<span class="btn-call-label">Микрофон\nвыкл.</span></button><button type="button" class="btn-call-toggle btn-call-video" id="btnGroupCallVideo" title="Камера выкл." aria-label="Камера">📹<span class="btn-call-label">Камера\nвыкл.</span></button><button type="button" class="btn-call-toggle btn-call-screenshare" id="btnGroupCallShareScreen" title="Не делимся экраном" aria-label="Экран" style="display:none">🖥️<span class="btn-call-label">Не делимся\nэкраном</span></button></div>' +
-            '<div class="call-panel-actions-group call-panel-actions-recording"><div class="call-panel-recording-wrap" id="groupCallRecordingWrap" title="Запись сохраняется на устройство"><div class="call-panel-recording-start-wrap" id="groupCallRecordingStartWrap"><button type="button" class="btn-call-toggle btn-call-record call-recording-desktop" id="btnGroupCallRecord" aria-label="Запись">⏺<span class="btn-call-label">Запись выкл.</span></button><div class="call-recording-mobile-wrap"><button type="button" class="btn-call-toggle btn-call-record" id="btnGroupCallRecordMobile" aria-label="Запись">⏺</button><div class="call-recording-mobile-dropdown" id="groupRecordingMobileDropdown"><button type="button" class="call-recording-option" data-type="audio">Только аудио</button><button type="button" class="call-recording-option" data-type="video">Аудио + Видео</button></div></div></div><button type="button" class="btn-call-toggle btn-call-recording-stop" id="btnGroupCallRecordingStop" aria-label="Остановить запись" style="display:none">● Остановить</button></div></div>' +
+            '<div class="call-panel-actions-group call-panel-actions-media"><button type="button" class="btn-call-toggle btn-call-audio" id="btnGroupCallMute" title="' + callsL('mic_off', 'Микрофон выкл.') + '" aria-label="' + callsL('microphone', 'Микрофон') + '">🎤<span class="btn-call-label">' + callsL('mic_off_label', 'Микрофон выкл.') + '</span></button><button type="button" class="btn-call-toggle btn-call-video" id="btnGroupCallVideo" title="' + callsL('camera_off', 'Камера выкл.') + '" aria-label="' + callsL('camera', 'Камера') + '">📹<span class="btn-call-label">' + callsLabelBr(callsL('camera_off_label', 'Камера\nвыкл.')) + '</span></button><button type="button" class="btn-call-toggle btn-call-screenshare" id="btnGroupCallShareScreen" title="' + callsL('screen_not_sharing', 'Не делимся экраном') + '" aria-label="' + callsL('screen', 'Экран') + '" class="is-hidden">🖥️<span class="btn-call-label">' + callsLabelBr(callsL('screen_not_sharing_label', 'Не делимся\nэкраном')) + '</span></button></div>' +
+            '<div class="call-panel-actions-group call-panel-actions-recording"><div class="call-panel-recording-wrap" id="groupCallRecordingWrap" title="' + callsL('recording_saving_hint_group', 'Запись сохраняется на устройство') + '"><div class="call-panel-recording-start-wrap" id="groupCallRecordingStartWrap"><button type="button" class="btn-call-toggle btn-call-record call-recording-desktop" id="btnGroupCallRecord" aria-label="' + callsL('recording', 'Запись') + '">⏺<span class="btn-call-label">' + callsL('recording_off', 'Запись выкл.') + '</span></button><div class="call-recording-mobile-wrap"><button type="button" class="btn-call-toggle btn-call-record" id="btnGroupCallRecordMobile" aria-label="' + callsL('recording', 'Запись') + '">⏺</button><div class="call-recording-mobile-dropdown" id="groupRecordingMobileDropdown"><button type="button" class="call-recording-option" data-type="audio">' + callsL('recording_only_audio', 'Только аудио') + '</button><button type="button" class="call-recording-option" data-type="video">' + callsL('recording_audio_video', 'Аудио + Видео') + '</button></div></div></div><button type="button" class="btn-call-toggle btn-call-recording-stop" id="btnGroupCallRecordingStop" aria-label="' + callsL('stop_recording', 'Остановить запись') + '" class="is-hidden">' + callsL('stop_recording_btn', '● Остановить') + '</button></div></div>' +
             '</div>' +
-            '<div class="call-panel-actions-right"><div class="call-panel-actions-group call-panel-actions-end"><button type="button" class="btn-call-hangup" id="btnGroupCallHangup" title="Закончить звонок" aria-label="Закончить звонок">📞<span class="btn-call-label">Закончить звонок</span></button></div></div>' +
+            '<div class="call-panel-actions-right"><div class="call-panel-actions-group call-panel-actions-end"><button type="button" class="btn-call-hangup" id="btnGroupCallHangup" title="' + callsL('end_call', 'Закончить звонок') + '" aria-label="' + callsL('end_call', 'Закончить звонок') + '">📞<span class="btn-call-label">' + callsL('end_call', 'Закончить звонок') + '</span></button></div></div>' +
             '</div></div>';
         body.appendChild(groupPanel);
         initGroupCallPiPDrag();
 
+        var minimizedBar = document.createElement('div');
+        minimizedBar.id = 'callMinimizedBar';
+        minimizedBar.className = 'call-minimized-bar';
+        var messengerContainer = document.querySelector('.messenger-container');
+        if (messengerContainer) {
+            var contentRow = document.querySelector('.messenger-content-row');
+            if (!contentRow) {
+                contentRow = document.createElement('div');
+                contentRow.className = 'messenger-content-row';
+                while (messengerContainer.firstChild) {
+                    contentRow.appendChild(messengerContainer.firstChild);
+                }
+                messengerContainer.appendChild(contentRow);
+            }
+            messengerContainer.insertBefore(minimizedBar, messengerContainer.firstChild);
+        } else {
+            body.insertBefore(minimizedBar, body.firstChild);
+        }
+        minimizedBar.setAttribute('role', 'button');
+        minimizedBar.setAttribute('tabindex', '0');
+        minimizedBar.setAttribute('aria-label', callsL('expand_call', 'Развернуть звонок'));
+        minimizedBar.innerHTML = '<span class="call-minimized-bar-name" id="callMinimizedName">—</span><span class="call-minimized-bar-duration" id="callMinimizedDuration">0:00</span><button type="button" class="call-minimized-bar-hangup" id="callMinimizedBarHangup" title="' + callsL('end_call', 'Закончить звонок') + '" aria-label="' + callsL('end_call', 'Закончить звонок') + '">📞</button>';
+        minimizedBar.addEventListener('click', function(e) {
+            if (callState.callMinimized && !e.target.closest('.call-minimized-bar-hangup')) expandActiveCall();
+        });
+        minimizedBar.addEventListener('keydown', function(e) {
+            if ((e.key === 'Enter' || e.key === ' ') && callState.callMinimized && !e.target.closest('.call-minimized-bar-hangup')) {
+                e.preventDefault();
+                expandActiveCall();
+            }
+        });
+        document.getElementById('callMinimizedBarHangup').addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (callState.groupCallId) {
+                openEndCallChoiceModal();
+            } else {
+                if (callState.callId) endCallApi(callState.callId);
+                cleanupCall();
+            }
+        });
+        document.getElementById('btnCallMinimize').addEventListener('click', function() { minimizeActiveCall(); });
+        document.getElementById('btnGroupCallMinimize').addEventListener('click', function() { minimizeActiveCall(); });
+
         var endCallChoiceModal = document.createElement('div');
         endCallChoiceModal.id = 'modalEndCallChoice';
-        endCallChoiceModal.className = 'modal modal-end-call-choice';
-        endCallChoiceModal.style.display = 'none';
+        endCallChoiceModal.className = 'modal modal-end-call-choice is-hidden';
         endCallChoiceModal.setAttribute('role', 'dialog');
         endCallChoiceModal.setAttribute('aria-modal', 'true');
         endCallChoiceModal.setAttribute('aria-labelledby', 'modalEndCallChoiceTitle');
-        endCallChoiceModal.innerHTML = '<div class="modal-content"><div class="modal-header"><h3 id="modalEndCallChoiceTitle">Завершить звонок</h3><button type="button" class="modal-close" id="modalEndCallChoiceClose" aria-label="Закрыть">&times;</button></div><div class="modal-body"><p class="modal-hint">Выйти только из звонка или завершить звонок для всех участников?</p><div class="modal-actions modal-actions-end-call"><button type="button" class="btn btn-secondary" id="modalEndCallChoiceLeave">Выйти из звонка</button><button type="button" class="btn btn-danger btn-call-end-all" id="modalEndCallChoiceEndAll">Завершить для всех</button></div></div></div>';
+        endCallChoiceModal.innerHTML = '<div class="modal-content"><div class="modal-header"><h3 id="modalEndCallChoiceTitle">' + callsL('end_call_modal_title', 'Завершить звонок') + '</h3><button type="button" class="modal-close" id="modalEndCallChoiceClose" aria-label="' + callsL('close', 'Закрыть') + '">&times;</button></div><div class="modal-body"><p class="modal-hint">' + callsL('end_call_modal_hint', 'Выйти только из звонка или завершить звонок для всех участников?') + '</p><div class="modal-actions modal-actions-end-call"><button type="button" class="btn btn-secondary" id="modalEndCallChoiceLeave">' + callsL('leave_call', 'Выйти из звонка') + '</button><button type="button" class="btn btn-danger btn-call-end-all" id="modalEndCallChoiceEndAll">' + callsL('end_for_all', 'Завершить для всех') + '</button></div></div></div>';
         body.appendChild(endCallChoiceModal);
 
         function openEndCallChoiceModal() {
             if (!callState.groupCallId) return;
-            endCallChoiceModal.style.display = 'flex';
+            endCallChoiceModal.classList.remove('is-hidden');
         }
         function closeEndCallChoiceModal() {
-            endCallChoiceModal.style.display = 'none';
+            endCallChoiceModal.classList.add('is-hidden');
         }
 
         document.getElementById('btnGroupCallHangup').addEventListener('click', function() {
@@ -1375,17 +1590,17 @@
                 var audio = callState.localStream.getAudioTracks()[0];
                 if (audio) {
                     audio.enabled = !audio.enabled;
-                    this.classList.toggle('btn-call-off', !audio.enabled);
-                    this.classList.toggle('btn-call-on', audio.enabled);
-                    this.title = audio.enabled ? 'Микрофон вкл.' : 'Микрофон выкл.';
+                    this.classList.toggle('btn-call-muted', !audio.enabled);
+                    this.classList.toggle('btn-call-unmuted', audio.enabled);
+                    this.title = audio.enabled ? callsL('mic_on', 'Микрофон вкл.') : callsL('mic_off', 'Микрофон выкл.');
                     var lbl = this.querySelector('.btn-call-label');
-                    if (lbl) lbl.textContent = audio.enabled ? 'Микрофон\nвкл.' : 'Микрофон\nвыкл.';
+                    if (lbl) lbl.textContent = audio.enabled ? callsL('mic_on_label', 'Микрофон вкл.') : callsL('mic_off_label', 'Микрофон выкл.');
                     sendMuteStateApi(!audio.enabled);
                 }
             }
         });
         document.getElementById('btnGroupCallVideo').addEventListener('click', function() {
-            if (callState.withVideo) switchGroupCallToAudio(); else switchGroupCallToVideo();
+            toggleLocalCameraGroup();
         });
         var btnGroupShareScreen = document.getElementById('btnGroupCallShareScreen');
         if (btnGroupShareScreen) {
@@ -1403,10 +1618,15 @@
                 if (!callState.localStream || callState.isSharingScreen || !callState.withVideo || !callState.peers) return;
                 var vt = callState.localStream.getVideoTracks()[0];
                 if (!vt) return;
+                var prevFacing = callState.facingMode;
                 callState.facingMode = callState.facingMode === 'user' ? 'environment' : 'user';
-                navigator.mediaDevices.getUserMedia({ video: getVideoConstraints() }).then(function(vStream) {
+                var constraints = { video: { facingMode: callState.facingMode } };
+                navigator.mediaDevices.getUserMedia({ video: constraints.video }).then(function(vStream) {
                     var newTrack = vStream.getVideoTracks()[0];
-                    if (!newTrack) return;
+                    if (!newTrack) {
+                        callState.facingMode = prevFacing;
+                        return;
+                    }
                     vt.stop();
                     callState.localStream.removeTrack(vt);
                     callState.localStream.addTrack(newTrack);
@@ -1429,7 +1649,13 @@
                         }
                     });
                     Promise.all(renegotiatePromises).catch(function() {});
-                }).catch(function() {});
+                }).catch(function(err) {
+                    callState.facingMode = prevFacing;
+                    console.error('Switch camera failed:', err);
+                    if (typeof window.showToast === 'function') {
+                        window.showToast(callsL('switch_camera_error', 'Не удалось переключить камеру'));
+                    }
+                });
             });
         }
         var groupRecWrap = document.getElementById('groupCallRecordingWrap');
@@ -1472,16 +1698,16 @@
         var addParticipantModal = document.createElement('div');
         addParticipantModal.id = 'modalAddParticipant';
         addParticipantModal.className = 'modal modal-add-participant';
-        addParticipantModal.style.display = 'none';
-        addParticipantModal.innerHTML = '<div class="modal-content"><div class="modal-header"><h3>Пригласить</h3><button type="button" class="modal-close" id="modalAddParticipantClose" aria-label="Закрыть">&times;</button></div><div class="modal-body">' +
+        addParticipantModal.classList.add('is-hidden');
+        addParticipantModal.innerHTML = '<div class="modal-content"><div class="modal-header"><h3>' + callsL('add_participant_title', 'Пригласить') + '</h3><button type="button" class="modal-close" id="modalAddParticipantClose" aria-label="' + callsL('close', 'Закрыть') + '">&times;</button></div><div class="modal-body">' +
             '<div class="add-participant-tabs" role="tablist">' +
-            '<button type="button" class="add-participant-tab active" role="tab" id="addParticipantTabContacts" data-tab="contacts" aria-selected="true">Контакты</button>' +
-            '<button type="button" class="add-participant-tab" role="tab" id="addParticipantTabGuests" data-tab="guests" aria-selected="false">Гости</button>' +
+            '<button type="button" class="add-participant-tab active" role="tab" id="addParticipantTabContacts" data-tab="contacts" aria-selected="true">' + callsL('contacts_tab', 'Контакты') + '</button>' +
+            '<button type="button" class="add-participant-tab" role="tab" id="addParticipantTabGuests" data-tab="guests" aria-selected="false">' + callsL('guests_tab', 'Гости') + '</button>' +
             '</div>' +
             '<div class="add-participant-panel add-participant-panel-contacts" id="addParticipantPanelContacts" role="tabpanel">' +
-            '<div class="add-participant-list-section"><h4 class="add-participant-list-title" id="addParticipantListTitle">Добавить в звонок</h4><ul id="modalAddParticipantList"></ul></div></div>' +
+            '<div class="add-participant-list-section"><h4 class="add-participant-list-title" id="addParticipantListTitle">' + callsL('add_to_call', 'Добавить в звонок') + '</h4><ul id="modalAddParticipantList"></ul></div></div>' +
             '<div class="add-participant-panel add-participant-panel-guests" id="addParticipantPanelGuests" role="tabpanel" hidden>' +
-            '<div class="add-participant-share-block"><p class="share-link-hint">Ссылка на звонок. По ссылке можно войти в аккаунт или присоединиться как гость.</p><div class="form-group share-link-expiry-wrap"><label for="addParticipantShareExpiry">Срок действия</label><select id="addParticipantShareExpiry" class="form-control"><option value="3600">1 час</option><option value="86400" selected>24 часа</option><option value="604800">7 дней</option></select></div><div class="share-link-field-wrap"><input type="text" id="addParticipantShareUrl" class="form-control" readonly placeholder="Нажмите «Получить ссылку»"></div><div class="modal-actions share-link-actions"><button type="button" class="btn btn-primary" id="addParticipantShareGet">Получить ссылку</button><button type="button" class="btn btn-secondary" id="addParticipantShareCopy" style="display:none">Копировать</button><button type="button" class="btn btn-secondary" id="addParticipantShareRevoke" style="display:none">Отозвать</button></div></div></div>' +
+            '<div class="add-participant-share-block"><p class="share-link-hint">' + callsL('share_link_hint', 'Ссылка на звонок. По ссылке можно войти в аккаунт или присоединиться как гость.') + '</p><div class="form-group share-link-expiry-wrap"><label for="addParticipantShareExpiry">' + callsL('expiry_label', 'Срок действия') + '</label><select id="addParticipantShareExpiry" class="form-control"><option value="3600">' + callsL('expiry_1h', '1 час') + '</option><option value="86400" selected>' + callsL('expiry_24h', '24 часа') + '</option><option value="604800">' + callsL('expiry_7d', '7 дней') + '</option></select></div><div class="share-link-field-wrap"><input type="text" id="addParticipantShareUrl" class="form-control" readonly placeholder="' + callsL('get_link_placeholder', 'Нажмите «Получить ссылку»') + '"></div><div class="modal-actions share-link-actions"><button type="button" class="btn btn-primary" id="addParticipantShareGet">' + callsL('get_link_btn', 'Получить ссылку') + '</button><button type="button" class="btn btn-secondary" id="addParticipantShareCopy" class="is-hidden">' + callsL('copy_btn', 'Копировать') + '</button><button type="button" class="btn btn-secondary" id="addParticipantShareRevoke" class="is-hidden">' + callsL('revoke_btn', 'Отозвать') + '</button></div></div></div>' +
             '</div></div></div></div>';
         body.appendChild(addParticipantModal);
 
@@ -1518,7 +1744,7 @@
             if (expiresInSec > 0) body.expires_in_sec = expiresInSec;
             return apiRequest(API_BASE + '/api/calls.php?action=call_link_create', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } })
                 .then(function(res) {
-                    if (!res || !res.success || !res.data) throw new Error(res && res.error ? res.error : 'Не удалось создать ссылку');
+                    if (!res || !res.success || !res.data) throw new Error(res && res.error ? res.error : callsL('create_link_error', 'Не удалось создать ссылку'));
                     var url = res.data.join_url;
                     var token = res.data.link_token;
                     var urlEl = document.getElementById('addParticipantShareUrl');
@@ -1543,7 +1769,7 @@
             addParticipantModal.dataset.linkToken = '';
 
             if (callState.groupCallId) {
-                if (listTitleEl) listTitleEl.textContent = 'Участники звонка';
+                if (listTitleEl) listTitleEl.textContent = callsL('participants_title', 'Участники звонка');
                 loadInviteModalShareLink().catch(function(err) {
                     if (err && err.message) alert(err.message);
                 });
@@ -1552,30 +1778,36 @@
                         .then(function(res) {
                             if (!listEl) return;
                             if (!res || !res.success || !res.data) {
-                                listEl.innerHTML = '<li class="muted">Не удалось загрузить участников</li>';
+                                listEl.innerHTML = '<li class="muted">' + callsL('load_participants_error', 'Не удалось загрузить участников') + '</li>';
                                 return;
                             }
                             var participants = res.data.participants || [];
                             var guests = res.data.guests || [];
                             var items = [];
-                            items.push('<li class="group-call-participant-self">Вы</li>');
+                            items.push('<li class="group-call-participant-item group-call-participant-self"><span class="group-call-participant-avatar"><span class="group-call-participant-avatar-placeholder">В</span></span><span class="group-call-participant-name">' + callsL('you', 'Вы') + '</span></li>');
                             participants.forEach(function(p) {
                                 if (p.user_uuid === userUuid) return;
-                                items.push('<li>' + escapeHtml(p.display_name || 'Участник') + '</li>');
+                                var name = p.display_name || callsL('participant', 'Участник');
+                                var letter = (name || '').trim().charAt(0).toUpperCase();
+                                var avatarHtml = p.avatar ? '<img src="' + escapeHtml(p.avatar) + '" alt="">' : '<span class="group-call-participant-avatar-placeholder">' + escapeHtml(letter) + '</span>';
+                                items.push('<li class="group-call-participant-item"><span class="group-call-participant-avatar">' + avatarHtml + '</span><span class="group-call-participant-name">' + escapeHtml(name) + '</span></li>');
                             });
                             guests.forEach(function(g) {
-                                items.push('<li class="group-call-participant-guest">' + escapeHtml(g.display_name || 'Гость') + '</li>');
+                                var name = g.display_name || callsL('guest', 'Гость');
+                                var letter = (name || '').trim().charAt(0).toUpperCase();
+                                var avatarHtml = '<span class="group-call-participant-avatar-placeholder">' + escapeHtml(letter) + '</span>';
+                                items.push('<li class="group-call-participant-item group-call-participant-guest"><span class="group-call-participant-avatar">' + avatarHtml + '</span><span class="group-call-participant-name">' + escapeHtml(name) + '</span></li>');
                             });
-                            listEl.innerHTML = items.length ? items.join('') : '<li class="muted">Нет участников</li>';
+                            listEl.innerHTML = items.length ? items.join('') : '<li class="muted">' + callsL('no_participants', 'Нет участников') + '</li>';
                         })
                         .catch(function() {
-                            if (listEl) listEl.innerHTML = '<li class="muted">Не удалось загрузить</li>';
+                            if (listEl) listEl.innerHTML = '<li class="muted">' + callsL('load_error', 'Не удалось загрузить') + '</li>';
                         });
                 } else if (listEl) {
-                    listEl.innerHTML = '<li class="muted">Нет участников</li>';
+                    listEl.innerHTML = '<li class="muted">' + callsL('no_participants', 'Нет участников') + '</li>';
                 }
             } else {
-                if (listTitleEl) listTitleEl.textContent = 'Добавить в звонок';
+                if (listTitleEl) listTitleEl.textContent = callsL('add_to_call', 'Добавить в звонок');
                 loadInviteModalShareLink().catch(function(err) {
                     if (err && err.message) alert(err.message);
                 });
@@ -1590,14 +1822,14 @@
                     li.style.cursor = 'pointer';
                     li.addEventListener('click', function() {
                         var u = this.dataset.uuid;
-                        addParticipantModal.style.display = 'none';
+                        addParticipantModal.classList.add('is-hidden');
                         if (u) addParticipantToCall(u).catch(function(e) { console.error(e); });
                     });
                     listEl.appendChild(li);
                 });
-                if (listEl.children.length === 0) listEl.innerHTML = '<li class="muted">Нет контактов для добавления</li>';
+                if (listEl.children.length === 0) listEl.innerHTML = '<li class="muted">' + callsL('no_contacts', 'Нет контактов для добавления') + '</li>';
             }
-            addParticipantModal.style.display = 'flex';
+            addParticipantModal.classList.remove('is-hidden');
         }
 
         document.getElementById('btnCallAddParticipant').addEventListener('click', openInviteModal);
@@ -1605,7 +1837,7 @@
 
         document.getElementById('addParticipantShareGet').addEventListener('click', function() {
             loadInviteModalShareLink().catch(function(err) {
-                alert(err.message || err.error || 'Не удалось создать ссылку');
+                alert(err.message || err.error || callsL('create_link_error', 'Не удалось создать ссылку'));
             });
         });
         document.getElementById('addParticipantShareCopy').addEventListener('click', function() {
@@ -1616,16 +1848,16 @@
             input.setSelectionRange(0, 99999);
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(input.value).then(function() {
-                    copyBtn.textContent = 'Скопировано';
-                    setTimeout(function() { copyBtn.textContent = 'Копировать'; }, 2000);
+                    copyBtn.textContent = callsL('copied_btn', 'Скопировано');
+                    setTimeout(function() { copyBtn.textContent = callsL('copy_btn', 'Копировать'); }, 2000);
                 }).catch(function() {
-                    try { document.execCommand('copy'); copyBtn.textContent = 'Скопировано'; setTimeout(function() { copyBtn.textContent = 'Копировать'; }, 2000); } catch (e) {}
+                    try { document.execCommand('copy'); copyBtn.textContent = callsL('copied_btn', 'Скопировано'); setTimeout(function() { copyBtn.textContent = callsL('copy_btn', 'Копировать'); }, 2000); } catch (e) {}
                 });
             } else {
                 try {
                     document.execCommand('copy');
-                    copyBtn.textContent = 'Скопировано';
-                    setTimeout(function() { copyBtn.textContent = 'Копировать'; }, 2000);
+                    copyBtn.textContent = callsL('copied_btn', 'Скопировано');
+                    setTimeout(function() { copyBtn.textContent = callsL('copy_btn', 'Копировать'); }, 2000);
                 } catch (e) {}
             }
         });
@@ -1642,18 +1874,22 @@
                     addParticipantModal.dataset.linkToken = '';
                 })
                 .catch(function(err) {
-                    alert(err.message || err.error || 'Не удалось отозвать');
+                    alert(err.message || err.error || callsL('revoke_error', 'Не удалось отозвать'));
                 })
                 .then(function() { revokeBtn.disabled = false; });
         });
 
-        document.getElementById('modalAddParticipantClose').addEventListener('click', function() { addParticipantModal.style.display = 'none'; });
+        document.getElementById('modalAddParticipantClose').addEventListener('click', function() { addParticipantModal.classList.add('is-hidden'); });
 
         document.getElementById('btnIncomingDecline').addEventListener('click', function() {
+            if (ringtoneAudioContext && ringtoneAudioContext.state === 'suspended' && typeof ringtoneAudioContext.resume === 'function') {
+                ringtoneAudioContext.resume().then(function() {}, function() {});
+            }
             var modal = document.getElementById('modalIncomingCall');
             var callId = modal ? parseInt(modal.dataset.callId, 10) : 0;
             callState.pendingInvite = null;
             callState.pendingOffer = null;
+            callState.incomingCallMinimized = null;
             hideIncomingModal();
             if (callId > 0 && API_BASE) {
                 fetch(API_BASE + '/api/calls.php?action=call_decline', {
@@ -1663,8 +1899,45 @@
                     body: JSON.stringify({ call_id: callId }),
                 }).catch(function() {});
             }
+            if (window.chatModule && typeof window.chatModule.loadConversations === 'function') {
+                window.chatModule.loadConversations();
+            }
+        });
+        document.getElementById('btnIncomingMinimize').addEventListener('click', function() {
+            var modal = document.getElementById('modalIncomingCall');
+            if (!modal) return;
+            var callId = parseInt(modal.dataset.callId, 10) || 0;
+            var conversationId = parseInt(modal.dataset.conversationId, 10) || 0;
+            var callerUuid = modal.dataset.callerUuid || '';
+            var withVideo = modal.dataset.withVideo === '1';
+            var callerName = (document.getElementById('incomingCallName') && document.getElementById('incomingCallName').textContent) || '';
+            var callerAvatar = null;
+            var avatarEl = document.getElementById('incomingCallAvatar');
+            if (avatarEl && avatarEl.querySelector('img')) {
+                var img = avatarEl.querySelector('img');
+                if (img.src) callerAvatar = img.src;
+            }
+            callState.incomingCallMinimized = {
+                call_id: callId,
+                conversation_id: conversationId,
+                caller_uuid: callerUuid,
+                with_video: withVideo,
+                caller_name: callerName,
+                caller_avatar: callerAvatar,
+            };
+            modal.classList.add('is-hidden');
+            stopIncomingCallAlerts();
+            if (window.chatModule && typeof window.chatModule.loadConversations === 'function') {
+                window.chatModule.loadConversations();
+            }
+            if (window.chatModule && typeof window.chatModule.refreshChatHeader === 'function') {
+                window.chatModule.refreshChatHeader();
+            }
         });
         document.getElementById('btnIncomingAccept').addEventListener('click', function() {
+            if (ringtoneAudioContext && ringtoneAudioContext.state === 'suspended' && typeof ringtoneAudioContext.resume === 'function') {
+                ringtoneAudioContext.resume().then(function() {}, function() {});
+            }
             const modal = document.getElementById('modalIncomingCall');
             if (!modal) return;
             const callId = parseInt(modal.dataset.callId, 10);
@@ -1685,18 +1958,18 @@
                 const audio = callState.localStream.getAudioTracks()[0];
                 if (audio) {
                     audio.enabled = !audio.enabled;
-                    this.classList.toggle('btn-call-off', !audio.enabled);
-                    this.classList.toggle('btn-call-on', audio.enabled);
-                    this.title = audio.enabled ? 'Микрофон вкл.' : 'Микрофон выкл.';
+                    this.classList.toggle('btn-call-muted', !audio.enabled);
+                    this.classList.toggle('btn-call-unmuted', audio.enabled);
+                    this.title = audio.enabled ? callsL('mic_on', 'Микрофон вкл.') : callsL('mic_off', 'Микрофон выкл.');
                     var lbl = this.querySelector('.btn-call-label');
-                    if (lbl) lbl.textContent = audio.enabled ? 'Микрофон\nвкл.' : 'Микрофон\nвыкл.';
+                    if (lbl) lbl.textContent = audio.enabled ? callsL('mic_on_label', 'Микрофон вкл.') : callsL('mic_off_label', 'Микрофон выкл.');
                     sendMuteStateApi(!audio.enabled);
                 }
             }
         });
         document.getElementById('btnCallVideo').addEventListener('click', function() {
             if (callState.groupCallId) return;
-            if (callState.withVideo) switchCallToAudio(); else switchCallToVideo();
+            toggleLocalCamera1v1();
         });
         var btnCallShareScreen = document.getElementById('btnCallShareScreen');
         if (btnCallShareScreen) {
@@ -1715,10 +1988,15 @@
                 if (callState.groupCallId || !callState.localStream || callState.isSharingScreen || !callState.withVideo || !callState.pc) return;
                 var vt = callState.localStream.getVideoTracks()[0];
                 if (!vt) return;
+                var prevFacing = callState.facingMode;
                 callState.facingMode = callState.facingMode === 'user' ? 'environment' : 'user';
-                navigator.mediaDevices.getUserMedia({ video: getVideoConstraints() }).then(function(vStream) {
+                var constraints = { video: { facingMode: callState.facingMode } };
+                navigator.mediaDevices.getUserMedia({ video: constraints.video }).then(function(vStream) {
                     var newTrack = vStream.getVideoTracks()[0];
-                    if (!newTrack) return;
+                    if (!newTrack) {
+                        callState.facingMode = prevFacing;
+                        return;
+                    }
                     vt.stop();
                     callState.localStream.removeTrack(vt);
                     callState.localStream.addTrack(newTrack);
@@ -1730,7 +2008,13 @@
                     }).then(function() {
                         return sendSignaling(callState.conversationId, callState.peerUuid, { sdp: callState.pc.localDescription });
                     }).catch(function() {});
-                }).catch(function() {});
+                }).catch(function(err) {
+                    callState.facingMode = prevFacing;
+                    console.error('Switch camera failed:', err);
+                    if (typeof window.showToast === 'function') {
+                        window.showToast(callsL('switch_camera_error', 'Не удалось переключить камеру'));
+                    }
+                });
             });
         }
 
@@ -1798,23 +2082,37 @@
             if (ev.candidate) sendSignaling(conversationId, peerUuid, { ice: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate }).catch(function() {});
         };
         pc.ontrack = function(ev) {
-            const remoteV = document.getElementById('callPanelRemoteVideo');
-            if (remoteV && ev.streams && ev.streams[0]) {
-                callState.remoteStream = ev.streams[0];
-                remoteV.srcObject = ev.streams[0];
-                remoteV.play().catch(function() {});
-                setCallPanelWaitingState(false);
-                setCallPanelDurationText('0:00');
-                startCallDurationTimer();
-                updateCallPanelPeerAvatar();
-                updateCallPanelRemoteStatus();
-                var track = ev.track;
-                if (track && typeof track.addEventListener === 'function') {
-                    track.addEventListener('mute', updateCallPanelRemoteStatus);
-                    track.addEventListener('unmute', updateCallPanelRemoteStatus);
-                }
-                startSpeakingMonitor1v1();
+            if (!ev.streams || !ev.streams[0]) return;
+            var stream = ev.streams[0];
+            callState.remoteStream = stream;
+            if (ev.track.kind === 'video' && !callState.withVideo) {
+                callState.withVideo = true;
+                updateCallPanelVideoUI(true);
             }
+            var remoteV = document.getElementById('callPanelRemoteVideo');
+            if (remoteV) {
+                remoteV.srcObject = stream;
+                remoteV.play().catch(function() {});
+            }
+            var remoteA = document.getElementById('callPanelRemoteAudio');
+            if (remoteA) {
+                remoteA.srcObject = stream;
+                remoteA.play().catch(function() {});
+            }
+            setCallPanelWaitingState(false);
+            setCallPanelDurationText('0:00');
+            startCallDurationTimer();
+            updateCallPanelPeerAvatar();
+            updateCallPanelRemoteStatus();
+            var track = ev.track;
+            if (track && typeof track.addEventListener === 'function') {
+                track.addEventListener('mute', updateCallPanelRemoteStatus);
+                track.addEventListener('unmute', updateCallPanelRemoteStatus);
+            }
+            if (stream && typeof stream.addEventListener === 'function') {
+                stream.addEventListener('removetrack', function() { updateCallPanelRemoteStatus(); updateCallPanelVideoUI(true); });
+            }
+            startSpeakingMonitor1v1();
         };
         return pc;
     }
@@ -1822,28 +2120,57 @@
     function updateCallPanelRemoteStatus() {
         var statusEl = document.getElementById('callPanelRemoteStatus');
         if (!statusEl) return;
-        var audioText = 'Микрофон выкл';
-        var videoText = 'Камера выкл';
-        if (callState.peerMuted === true) audioText = 'Микрофон выкл';
-        else if (callState.peerMuted === false) audioText = 'Микрофон вкл';
-        else if (callState.remoteStream) {
+        if (!callState.remoteStream) {
+            statusEl.innerHTML = '';
+            var peerStatusEl = document.getElementById('callPanelPeerAudioStatus');
+            if (peerStatusEl) peerStatusEl.innerHTML = '';
+            var panel = document.getElementById('callPanel');
+            if (panel) panel.classList.remove('call-panel-remote-video-off');
+            return;
+        }
+        var audioMuted = true;
+        if (callState.peerMuted === true) audioMuted = true;
+        else if (callState.peerMuted === false) audioMuted = false;
+        else {
             var at = callState.remoteStream.getAudioTracks();
-            if (at && at.length > 0 && !at[0].muted) audioText = 'Микрофон вкл';
+            if (at && at.length > 0 && !at[0].muted) audioMuted = false;
         }
-        if (callState.remoteStream) {
-            var vt = callState.remoteStream.getVideoTracks();
-            if (vt && vt.length > 0 && !vt[0].muted) videoText = 'Камера вкл';
-        }
-        statusEl.textContent = audioText + ', ' + videoText;
+        var micLabel = audioMuted ? callsL('mic_off', 'Микрофон выкл.') : callsL('mic_on', 'Микрофон вкл.');
+        var micClass = audioMuted ? 'peer-mic-off' : 'peer-mic-on';
+        var iconHtml = '<span class="peer-mic-icon ' + micClass + '" role="img" aria-label="' + escapeHtml(micLabel) + '" title="' + escapeHtml(micLabel) + '"></span>';
+        statusEl.innerHTML = iconHtml;
         var peerStatusEl = document.getElementById('callPanelPeerAudioStatus');
-        if (peerStatusEl) peerStatusEl.textContent = audioText + ', ' + videoText;
+        if (peerStatusEl) peerStatusEl.innerHTML = iconHtml;
+        var vt = callState.remoteStream.getVideoTracks()[0];
+        var videoOff = callState.withVideo && !callState.remoteScreenSharing && (!vt || vt.muted);
+        var panel = document.getElementById('callPanel');
+        if (panel) panel.classList.toggle('call-panel-remote-video-off', !!videoOff);
+        var audioView = document.getElementById('callPanelAudioView');
+        if (audioView && callState.withVideo) audioView.style.display = videoOff ? 'flex' : 'none';
+    }
+
+    /**
+     * Переключить только свою камеру в звонке 1-на-1. Влияет только на свой превью; видео собеседника не трогаем.
+     */
+    function toggleLocalCamera1v1() {
+        if (callState.groupCallId || !callState.localStream) return;
+        var vt = callState.localStream.getVideoTracks()[0];
+        if (vt) {
+            vt.enabled = !vt.enabled;
+            updateLocalPipVisibility1v1();
+            updateVideoButtonStates();
+        } else {
+            switchCallToVideo();
+        }
     }
 
     /**
      * Переключить звонок 1-на-1 с аудио на видео (включить камеру).
+     * Проверяем именно наличие локального видеотрека, а не withVideo — иначе второй пользователь не сможет включить камеру, если первый уже включил (withVideo уже true из-за удалённого потока).
      */
     function switchCallToVideo() {
-        if (callState.withVideo || !callState.pc || !callState.peerUuid || !callState.localStream) return Promise.resolve();
+        if (callState.localStream && callState.localStream.getVideoTracks().length > 0) return Promise.resolve();
+        if (!callState.pc || !callState.peerUuid || !callState.localStream) return Promise.resolve();
         return navigator.mediaDevices.getUserMedia({ video: getVideoConstraints() }).then(function(videoStream) {
             var videoTrack = videoStream.getVideoTracks()[0];
             if (!videoTrack) return;
@@ -2121,6 +2448,21 @@
     }
 
     /**
+     * Переключить только свою камеру в групповом звонке. Влияет только на свой превью; видео других не трогаем.
+     */
+    function toggleLocalCameraGroup() {
+        if (!callState.groupCallId || !callState.localStream) return;
+        var vt = callState.localStream.getVideoTracks()[0];
+        if (vt) {
+            vt.enabled = !vt.enabled;
+            updateLocalPipVisibilityGroup();
+            updateVideoButtonStates();
+        } else {
+            switchGroupCallToVideo();
+        }
+    }
+
+    /**
      * Переключить групповой звонок на видео.
      */
     function switchGroupCallToVideo() {
@@ -2216,32 +2558,33 @@
         if (audioView) audioView.style.display = withVideo ? 'none' : 'flex';
         var localV = panel.querySelector('.group-call-local-video');
         if (localV && !withVideo) localV.srcObject = null;
+        if (withVideo) updateLocalPipVisibilityGroup();
     }
 
     function updateVideoButtonStates() {
-        var withV = callState.withVideo;
+        var cameraOn = isLocalCameraOn();
         var btn1 = document.getElementById('btnCallVideo');
         if (btn1) {
-            btn1.classList.toggle('btn-call-off', !withV);
-            btn1.classList.toggle('btn-call-on', withV);
-            btn1.title = withV ? 'Камера вкл.' : 'Камера выкл.';
-            btn1.setAttribute('aria-label', withV ? 'Камера вкл.' : 'Камера выкл.');
+            btn1.classList.toggle('btn-call-off', !cameraOn);
+            btn1.classList.toggle('btn-call-on', cameraOn);
+            btn1.title = cameraOn ? callsL('camera_on', 'Камера вкл.') : callsL('camera_off', 'Камера выкл.');
+            btn1.setAttribute('aria-label', cameraOn ? callsL('camera_on', 'Камера вкл.') : callsL('camera_off', 'Камера выкл.'));
             var lbl = btn1.querySelector('.btn-call-label');
-            if (lbl) lbl.textContent = withV ? 'Камера\nвкл.' : 'Камера\nвыкл.';
+            if (lbl) lbl.innerHTML = callsLabelBr(cameraOn ? callsL('camera_on_label', 'Камера\nвкл.') : callsL('camera_off_label', 'Камера\nвыкл.'));
         }
         var btn2 = document.getElementById('btnGroupCallVideo');
         if (btn2) {
-            btn2.classList.toggle('btn-call-off', !withV);
-            btn2.classList.toggle('btn-call-on', withV);
-            btn2.title = withV ? 'Камера вкл.' : 'Камера выкл.';
-            btn2.setAttribute('aria-label', withV ? 'Камера вкл.' : 'Камера выкл.');
+            btn2.classList.toggle('btn-call-off', !cameraOn);
+            btn2.classList.toggle('btn-call-on', cameraOn);
+            btn2.title = cameraOn ? callsL('camera_on', 'Камера вкл.') : callsL('camera_off', 'Камера выкл.');
+            btn2.setAttribute('aria-label', cameraOn ? callsL('camera_on', 'Камера вкл.') : callsL('camera_off', 'Камера выкл.'));
             var lbl2 = btn2.querySelector('.btn-call-label');
-            if (lbl2) lbl2.textContent = withV ? 'Камера\nвкл.' : 'Камера\nвыкл.';
+            if (lbl2) lbl2.innerHTML = callsLabelBr(cameraOn ? callsL('camera_on_label', 'Камера\nвкл.') : callsL('camera_off_label', 'Камера\nвыкл.'));
         }
         var switch1 = document.getElementById('btnCallSwitchCamera');
-        if (switch1) switch1.style.display = withV ? 'inline-flex' : 'none';
+        if (switch1) switch1.style.display = (callState.withVideo && cameraOn) ? 'inline-flex' : 'none';
         var switch2 = document.getElementById('btnGroupCallSwitchCamera');
-        if (switch2) switch2.style.display = withV ? 'inline-flex' : 'none';
+        if (switch2) switch2.style.display = (callState.withVideo && cameraOn) ? 'inline-flex' : 'none';
     }
 
     function updateScreenShareButtonStates() {
@@ -2250,19 +2593,19 @@
         if (btn1) {
             btn1.classList.toggle('btn-call-off', !sharing);
             btn1.classList.toggle('btn-call-on', sharing);
-            btn1.title = sharing ? 'Делимся экраном' : 'Не делимся экраном';
-            btn1.setAttribute('aria-label', sharing ? 'Делимся экраном' : 'Не делимся экраном');
+            btn1.title = sharing ? callsL('screen_sharing', 'Делимся экраном') : callsL('screen_not_sharing', 'Не делимся экраном');
+            btn1.setAttribute('aria-label', sharing ? callsL('screen_sharing', 'Делимся экраном') : callsL('screen_not_sharing', 'Не делимся экраном'));
             var lbl = btn1.querySelector('.btn-call-label');
-            if (lbl) lbl.textContent = sharing ? 'Делимся\nэкраном' : 'Не делимся\nэкраном';
+            if (lbl) lbl.innerHTML = callsLabelBr(sharing ? callsL('screen_sharing_label', 'Делимся\nэкраном') : callsL('screen_not_sharing_label', 'Не делимся\nэкраном'));
         }
         var btn2 = document.getElementById('btnGroupCallShareScreen');
         if (btn2) {
             btn2.classList.toggle('btn-call-off', !sharing);
             btn2.classList.toggle('btn-call-on', sharing);
-            btn2.title = sharing ? 'Делимся экраном' : 'Не делимся экраном';
-            btn2.setAttribute('aria-label', sharing ? 'Делимся экраном' : 'Не делимся экраном');
+            btn2.title = sharing ? callsL('screen_sharing', 'Делимся экраном') : callsL('screen_not_sharing', 'Не делимся экраном');
+            btn2.setAttribute('aria-label', sharing ? callsL('screen_sharing', 'Делимся экраном') : callsL('screen_not_sharing', 'Не делимся экраном'));
             var lbl2 = btn2.querySelector('.btn-call-label');
-            if (lbl2) lbl2.textContent = sharing ? 'Делимся\nэкраном' : 'Не делимся\nэкраном';
+            if (lbl2) lbl2.innerHTML = callsLabelBr(sharing ? callsL('screen_sharing_label', 'Делимся\nэкраном') : callsL('screen_not_sharing_label', 'Не делимся\nэкраном'));
         }
     }
 
@@ -2301,7 +2644,7 @@
                 headers: { 'Content-Type': 'application/json' },
             });
         }).then(function(res) {
-            if (!res || !res.success || !res.data || !res.data.group_call_id) throw new Error('Не удалось начать групповой звонок');
+            if (!res || !res.success || !res.data || !res.data.group_call_id) throw new Error(callsL('start_group_call_error', 'Не удалось начать групповой звонок'));
             var groupCallId = res.data.group_call_id;
             return navigator.mediaDevices.getUserMedia({ audio: true, video: withVideo ? getVideoConstraints() : false }).then(function(stream) {
                 callState.groupCallId = groupCallId;
@@ -2310,18 +2653,22 @@
                 callState.localStream = stream;
                 callState.peers = new Map();
                 callState.participantUuids = [userUuid];
-                stream.getAudioTracks().forEach(function(t) { t.enabled = false; });
                 var localV = document.querySelector('#groupCallPanel .group-call-local-video');
                 if (localV) { localV.srcObject = stream; localV.play().catch(function(){}); }
                 showGroupCallPanel(withVideo);
                 var muteBtn = document.getElementById('btnGroupCallMute');
-                if (muteBtn) muteBtn.classList.add('btn-call-off');
-                sendMuteStateApi(true);
+                if (muteBtn) {
+                    muteBtn.classList.add('btn-call-unmuted');
+                    var lbl = muteBtn.querySelector('.btn-call-label');
+                    if (lbl) lbl.textContent = callsL('mic_on_label', 'Микрофон вкл.');
+                    muteBtn.title = callsL('mic_on', 'Микрофон вкл.');
+                }
+                sendMuteStateApi(false);
                 return stream;
             }, function(err) {
                 var msg = (err && err.name === 'NotReadableError') || (err && err.message && err.message.indexOf('in use') !== -1)
-                    ? 'Камера или микрофон заняты. Закройте другие вкладки или приложения, использующие устройство.'
-                    : (err && err.message) || 'Не удалось получить доступ к камере/микрофону';
+                    ? callsL('media_in_use', 'Камера или микрофон заняты. Закройте другие вкладки или приложения, использующие устройство.')
+                    : (err && err.message) || callsL('media_access_error', 'Не удалось получить доступ к камере/микрофону');
                 return Promise.reject(new Error(msg));
             });
         });
@@ -2341,7 +2688,7 @@
                 headers: { 'Content-Type': 'application/json' },
             });
         }).then(function(res) {
-            if (!res || !res.success || !res.data) throw new Error('Не удалось присоединиться');
+            if (!res || !res.success || !res.data) throw new Error(callsL('join_error', 'Не удалось присоединиться'));
             var data = res.data;
             var groupCallId = data.group_call_id;
             var conversationId = data.conversation_id;
@@ -2355,14 +2702,18 @@
                 callState.participantUuids = participants.map(function(p) { return p.user_uuid; }).filter(function(u) { return u !== userUuid; });
                 callState.participantGuestIds = (data.guests || []).map(function(g) { return g.id; });
                 callState.guestDisplayNames = {};
-                (data.guests || []).forEach(function(g) { callState.guestDisplayNames['guest_' + g.id] = g.display_name || 'Гость'; });
-                stream.getAudioTracks().forEach(function(t) { t.enabled = false; });
+                (data.guests || []).forEach(function(g) { callState.guestDisplayNames['guest_' + g.id] = g.display_name || callsL('guest', 'Гость'); });
                 var localV = document.querySelector('#groupCallPanel .group-call-local-video');
                 if (localV) { localV.srcObject = stream; localV.play().catch(function(){}); }
                 showGroupCallPanel(callState.withVideo);
                 var muteBtn = document.getElementById('btnGroupCallMute');
-                if (muteBtn) muteBtn.classList.add('btn-call-off');
-                sendMuteStateApi(true);
+                if (muteBtn) {
+                    muteBtn.classList.add('btn-call-unmuted');
+                    var lbl = muteBtn.querySelector('.btn-call-label');
+                    if (lbl) lbl.textContent = callsL('mic_on_label', 'Микрофон вкл.');
+                    muteBtn.title = callsL('mic_on', 'Микрофон вкл.');
+                }
+                sendMuteStateApi(false);
                 var convId = conversationId;
                 var createOfferFor = function(peerKey) {
                     var pc = createPeerConnectionForGroup(peerKey);
@@ -2382,8 +2733,8 @@
                 return chain;
             }, function(err) {
                 var msg = (err && err.name === 'NotReadableError') || (err && err.message && err.message.indexOf('in use') !== -1)
-                    ? 'Камера или микрофон заняты. Закройте другие вкладки или приложения, использующие устройство.'
-                    : (err && err.message) || 'Не удалось получить доступ к камере/микрофону';
+                    ? callsL('media_in_use', 'Камера или микрофон заняты. Закройте другие вкладки или приложения, использующие устройство.')
+                    : (err && err.message) || callsL('media_access_error', 'Не удалось получить доступ к камере/микрофону');
                 return Promise.reject(new Error(msg));
             });
         });
@@ -2418,7 +2769,7 @@
                 headers: { 'Content-Type': 'application/json' },
             });
         }).then(function(res) {
-            if (!res || !res.success || !res.data || !res.data.call_id) throw new Error('Не удалось начать звонок');
+            if (!res || !res.success || !res.data || !res.data.call_id) throw new Error(callsL('start_call_error', 'Не удалось начать звонок'));
             const callId = res.data.call_id;
             return apiRequest(API_BASE + '/api/calls.php?action=invite', {
                 method: 'POST',
@@ -2434,7 +2785,6 @@
 
             return navigator.mediaDevices.getUserMedia({ audio: true, video: withVideo ? getVideoConstraints() : false }).then(function(stream) {
                 callState.localStream = stream;
-                stream.getAudioTracks().forEach(function(t) { t.enabled = false; });
                 const localV = document.getElementById('callPanelLocalVideo');
                 if (localV) { localV.srcObject = stream; localV.muted = true; localV.play().catch(function(){}); }
 
@@ -2449,8 +2799,14 @@
             }).then(function() {
                 showCallPanel(withVideo);
                 var muteBtn = document.getElementById('btnCallMute');
-                if (muteBtn) muteBtn.classList.add('btn-call-off');
-                sendMuteStateApi(true);
+                if (muteBtn) {
+                    muteBtn.classList.add('btn-call-unmuted');
+                    var lbl = muteBtn.querySelector('.btn-call-label');
+                    if (lbl) lbl.textContent = callsL('mic_on_label', 'Микрофон вкл.');
+                    muteBtn.title = callsL('mic_on', 'Микрофон вкл.');
+                }
+                sendMuteStateApi(false);
+                updateVideoButtonStates();
             });
         });
     }
@@ -2464,7 +2820,6 @@
 
         navigator.mediaDevices.getUserMedia({ audio: true, video: withVideo ? getVideoConstraints() : false }).then(function(stream) {
             callState.localStream = stream;
-            stream.getAudioTracks().forEach(function(t) { t.enabled = false; });
             const localV = document.getElementById('callPanelLocalVideo');
             if (localV) { localV.srcObject = stream; localV.muted = true; localV.play().catch(function(){}); }
 
@@ -2473,6 +2828,17 @@
 
             var offer = callState.pendingOffer;
             callState.pendingOffer = null;
+            function afterShowPanel() {
+                var muteBtn = document.getElementById('btnCallMute');
+                if (muteBtn) {
+                    muteBtn.classList.add('btn-call-unmuted');
+                    var lbl = muteBtn.querySelector('.btn-call-label');
+                    if (lbl) lbl.textContent = callsL('mic_on_label', 'Микрофон вкл.');
+                    muteBtn.title = callsL('mic_on', 'Микрофон вкл.');
+                }
+                sendMuteStateApi(false);
+                updateVideoButtonStates();
+            }
             if (offer) {
                 return callState.pc.setRemoteDescription(new RTCSessionDescription(offer)).then(function() {
                     return callState.pc.createAnswer();
@@ -2482,15 +2848,11 @@
                     return sendSignaling(conversationId, callerUuid, { sdp: callState.pc.localDescription });
                 }).then(function() {
                     showCallPanel(withVideo);
-                    var muteBtn = document.getElementById('btnCallMute');
-                    if (muteBtn) muteBtn.classList.add('btn-call-off');
-                    sendMuteStateApi(true);
+                    afterShowPanel();
                 });
             } else {
                 showCallPanel(withVideo);
-                var muteBtn = document.getElementById('btnCallMute');
-                if (muteBtn) muteBtn.classList.add('btn-call-off');
-                sendMuteStateApi(true);
+                afterShowPanel();
             }
         }).catch(function(err) {
             console.error('Accept call error:', err);
@@ -2510,7 +2872,7 @@
             if (data.callee_uuid !== myUuid) return;
             callState.pendingInvite = { call_id: data.call_id, caller_uuid: data.caller_uuid, conversation_id: data.conversation_id, with_video: !!data.with_video };
             callState.pendingOffer = null;
-            var name = 'Входящий звонок';
+            var name = callsL('incoming_call', 'Входящий звонок');
             var avatar = null;
             if (window.chatModule && typeof window.chatModule.conversations === 'function' && data.caller_uuid) {
                 var list = window.chatModule.conversations();
@@ -2534,7 +2896,7 @@
         if (type === 'call.sdp' && toMe && data.sdp && !callState.groupCallId) {
             var sdp = data.sdp;
             if (sdp.type === 'offer') {
-                if (callState.pc && !callState.isCaller) {
+                if (callState.pc) {
                     callState.pc.setRemoteDescription(new RTCSessionDescription(sdp)).then(function() {
                         flushIceBuffer(callState.pc);
                         return callState.pc.createAnswer();
@@ -2552,7 +2914,7 @@
                         acceptCall(inv.call_id, inv.caller_uuid, inv.conversation_id, inv.with_video);
                     }
                 }
-            } else if (sdp.type === 'answer' && callState.pc && callState.isCaller) {
+            } else if (sdp.type === 'answer' && callState.pc) {
                 callState.pc.setRemoteDescription(new RTCSessionDescription(sdp)).then(function() {
                     flushIceBuffer(callState.pc);
                 }).catch(function() {});
@@ -2594,6 +2956,12 @@
             if (data.call_id === callState.callId || (data.call_id && !callState.callId && callState.pendingInvite && callState.pendingInvite.call_id === data.call_id)) {
                 cleanupCall();
             }
+            if (callState.incomingCallMinimized && callState.incomingCallMinimized.call_id && parseInt(callState.incomingCallMinimized.call_id, 10) === parseInt(data.call_id, 10)) {
+                callState.incomingCallMinimized = null;
+                if (window.chatModule && typeof window.chatModule.loadConversations === 'function') {
+                    window.chatModule.loadConversations();
+                }
+            }
             if (callState.joiningOngoingCall && data.call_id && callState.pendingInvite && callState.pendingInvite.call_id === data.call_id) {
                 callState.joiningOngoingCall = false;
                 callState.pendingInvite = null;
@@ -2615,7 +2983,7 @@
                     var audioMuted = muted;
                     slot.classList.toggle('group-call-avatar-muted', !!audioMuted);
                     var audioStatusEl = slot.querySelector('.group-call-avatar-slot-audio-status');
-                    if (audioStatusEl) audioStatusEl.textContent = audioMuted ? 'Аудио выкл' : 'Аудио вкл';
+                    if (audioStatusEl) audioStatusEl.textContent = audioMuted ? callsL('audio_off', 'Аудио выкл') : callsL('audio_on', 'Аудио вкл');
                 }
                 updateGroupCallSlotStatus(fromKey);
             } else if (fromKey === callState.peerUuid) {
@@ -2640,6 +3008,7 @@
                 callState.remoteScreenSharing = sharing;
                 var panel = document.getElementById('callPanel');
                 if (panel) panel.classList.toggle('call-panel-remote-screen-share', sharing);
+                updateCallPanelRemoteStatus();
             }
             return;
         }
@@ -2648,21 +3017,22 @@
             if (data.recording_by_uuid === myUuid) return;
             var inCall = !!(callState.callId || callState.groupCallId);
             if (!inCall) return;
-            var label = callState.groupCallId ? 'Участник ведёт запись' : 'Собеседник ведёт запись';
+            var recordingByTemplate = callsL('recording_by', '%s ведёт запись');
+            var label = recordingByTemplate.replace('%s', callState.groupCallId ? callsL('participant', 'Участник') : callsL('participant', 'Собеседник'));
             if (callState.groupCallId && data.recording_by_uuid && window.chatModule && typeof window.chatModule.conversations === 'function') {
                 var list = window.chatModule.conversations();
                 var conv = list && list.find(function(c) { return c.other_user && c.other_user.uuid === data.recording_by_uuid; });
                 if (!conv && window.chatModule.contacts) {
                     var contacts = window.chatModule.contacts();
                     var contact = contacts && contacts.find(function(c) { return c.uuid === data.recording_by_uuid; });
-                    if (contact) label = (contact.display_name || contact.username || 'Участник') + ' ведёт запись';
+                    if (contact) label = recordingByTemplate.replace('%s', contact.display_name || contact.username || callsL('participant', 'Участник'));
                 } else if (conv && conv.other_user) {
-                    label = (conv.other_user.display_name || conv.other_user.username || 'Участник') + ' ведёт запись';
+                    label = recordingByTemplate.replace('%s', conv.other_user.display_name || conv.other_user.username || callsL('participant', 'Участник'));
                 }
             } else if (!callState.groupCallId && window.chatModule && typeof window.chatModule.conversations === 'function' && callState.peerUuid === data.recording_by_uuid) {
                 var list = window.chatModule.conversations();
                 var c = list && list.find(function(conv) { return conv.other_user && conv.other_user.uuid === data.recording_by_uuid; });
-                if (c && (c.other_user.display_name || c.other_user.username)) label = (c.other_user.display_name || c.other_user.username) + ' ведёт запись';
+                if (c && (c.other_user.display_name || c.other_user.username)) label = recordingByTemplate.replace('%s', c.other_user.display_name || c.other_user.username);
             }
             showRecordingBanner(label);
             return;
@@ -2730,7 +3100,7 @@
 
         if (type === 'call.group.guest_joined' && callState.groupCallId && data.group_call_id === callState.groupCallId) {
             var guestId = data.guest_id;
-            var displayName = data.display_name || 'Гость';
+            var displayName = data.display_name || callsL('guest', 'Гость');
             var peerKey = 'guest_' + guestId;
             if (callState.peers && callState.peers.has(peerKey)) return;
             callState.guestDisplayNames = callState.guestDisplayNames || {};
@@ -2922,6 +3292,41 @@
             .catch(function() { return []; });
     }
 
+    function getIncomingCallMinimized() {
+        return callState.incomingCallMinimized || null;
+    }
+
+    function restoreIncomingModal() {
+        var min = callState.incomingCallMinimized;
+        if (!min) return false;
+        showIncomingModal({
+            call_id: min.call_id,
+            caller_uuid: min.caller_uuid,
+            conversation_id: min.conversation_id,
+            with_video: min.with_video,
+            caller_name: min.caller_name,
+            caller_avatar: min.caller_avatar,
+        });
+        callState.pendingInvite = { call_id: min.call_id, caller_uuid: min.caller_uuid, conversation_id: min.conversation_id, with_video: min.with_video };
+        if (window.chatModule && typeof window.chatModule.loadConversations === 'function') {
+            window.chatModule.loadConversations();
+        }
+        return true;
+    }
+
+    function acceptCallFromMinimized() {
+        var min = callState.incomingCallMinimized;
+        if (!min || !min.call_id || !min.caller_uuid || min.conversation_id == null) return Promise.reject(new Error('Нет свёрнутого входящего звонка'));
+        var callId = parseInt(min.call_id, 10);
+        var conversationId = parseInt(min.conversation_id, 10);
+        callState.incomingCallMinimized = null;
+        hideIncomingModal();
+        if (window.chatModule && typeof window.chatModule.loadConversations === 'function') {
+            window.chatModule.loadConversations();
+        }
+        return Promise.resolve(acceptCall(callId, min.caller_uuid, conversationId, !!min.with_video));
+    }
+
     window.Calls = {
         init: init,
         getConfig: function() { return callConfig; },
@@ -2940,6 +3345,10 @@
         onWebSocketEvent: onWebSocketEvent,
         isInGroupCall: function() { return !!callState.groupCallId; },
         isInCall: function() { return !!(callState.callId || callState.groupCallId); },
+        getIncomingCallMinimized: getIncomingCallMinimized,
+        restoreIncomingModal: restoreIncomingModal,
+        acceptCallFromMinimized: acceptCallFromMinimized,
+        clearIncomingCallMinimized: function() { callState.incomingCallMinimized = null; },
     };
 
     if (document.readyState === 'loading') {

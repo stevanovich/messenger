@@ -6,6 +6,12 @@
     box-sizing: border-box;
 }
 
+/* Утилитарные классы вместо инлайн-стилей */
+.is-hidden { display: none !important; }
+.input-file-hidden { display: none; }
+.modal-input-mt { margin-top: 0.5rem; }
+.modal-actions-mt { margin-top: 0.75rem; }
+
 :root {
     --primary-color: #0088cc;
     --primary-dark: #006699;
@@ -30,10 +36,41 @@ body {
 
 /* Навигация */
 .main-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
     background-color: var(--bg-color);
     border-bottom: 1px solid var(--border-color);
     padding: 0.3rem 0;
     box-shadow: var(--shadow);
+}
+
+body.with-fixed-nav {
+    padding-top: 58px;
+}
+
+.nav-doc-toggle.doc-sidebar-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-color);
+    cursor: pointer;
+    padding: 0;
+}
+.nav-doc-toggle.doc-sidebar-toggle:hover {
+    background: var(--border-color);
+}
+.nav-doc-toggle .doc-sidebar-toggle-icon {
+    width: 20px;
+    height: 14px;
+    background: linear-gradient(to bottom, currentColor 0, currentColor 2px, transparent 2px, transparent 6px, currentColor 6px, currentColor 8px, transparent 8px, transparent 12px, currentColor 12px, currentColor 14px);
 }
 
 .nav-container {
@@ -381,6 +418,46 @@ body {
     font-size: 1rem;
 }
 
+/* Обёртка поля пароля с кнопкой показа/скрытия */
+.password-input-wrap {
+    position: relative;
+    display: block;
+}
+.password-input-wrap input {
+    padding-right: 2.75rem;
+}
+.password-toggle-btn {
+    position: absolute;
+    top: 50%;
+    right: 0.35rem;
+    transform: translateY(-50%);
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    color: var(--text-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s, background-color 0.2s;
+}
+.password-toggle-btn:hover {
+    color: var(--text-color);
+    background-color: var(--secondary-color);
+}
+.password-toggle-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--primary-color);
+}
+.password-toggle-btn svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: currentColor;
+}
+
 /* Аутентификация */
 .auth-container {
     min-height: 100vh;
@@ -403,6 +480,29 @@ body {
 .auth-box h1 {
     margin-bottom: 1.5rem;
     text-align: center;
+    color: var(--text-color);
+}
+
+.auth-lang-selector {
+    text-align: center;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+.auth-lang-label {
+    margin-right: 0.5rem;
+}
+.auth-lang-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    margin: 0 0.25rem;
+}
+.auth-lang-link:hover {
+    text-decoration: underline;
+}
+.auth-lang-link.active {
+    font-weight: bold;
+    text-decoration: none;
     color: var(--text-color);
 }
 
@@ -480,6 +580,10 @@ body {
 .call-room-panel--visible {
     position: fixed;
     transform: none;
+}
+.call-room-panel.call-room-panel-minimized {
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
 }
 .call-room-inner {
     flex: 1;
@@ -680,6 +784,10 @@ body {
 .call-room-panel .btn-call-toggle.btn-call-off {
     opacity: 0.6;
 }
+.call-room-panel .btn-call-audio.btn-call-unmuted {
+    background: #2ea934;
+    color: #fff;
+}
 .call-room-panel .btn-call-hangup:hover {
     background: #b71c1c;
 }
@@ -724,6 +832,74 @@ body {
 }
 .call-room-register-link:hover {
     text-decoration: underline;
+}
+/* Плашка свёрнутого звонка (call-room) — сверху, в потоке */
+.call-room-minimized-bar {
+    flex-shrink: 0;
+    display: none;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-color, #1a1a1a);
+    border-bottom: 1px solid var(--border-color, #333);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+}
+.call-room-minimized-bar.call-room-minimized-bar-visible {
+    display: flex;
+}
+.call-room-minimized-bar-name {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.call-room-minimized-bar-duration {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: var(--text-light);
+    min-width: 3rem;
+}
+.call-room-minimized-bar-hangup {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #c62828;
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    cursor: pointer;
+}
+.call-room-minimized-bar-hangup:hover {
+    background: #b71c1c;
+}
+.call-room-panel .call-panel-minimize-corner.call-room-minimize {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 100;
+    width: 40px;
+    height: 40px;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.call-room-panel .call-panel-minimize-corner.call-room-minimize:hover {
+    background: rgba(0, 0, 0, 0.7);
 }
 
 .form-group {
@@ -839,6 +1015,10 @@ body {
     text-decoration: underline;
 }
 
+.auth-doc-link {
+    margin-top: 0.75rem;
+}
+
 /* OAuth-кнопки на страницах входа/регистрации */
 .auth-oauth {
     margin-top: 1.5rem;
@@ -873,6 +1053,10 @@ body {
 .btn-oauth:hover {
     background: var(--bg-hover);
     border-color: var(--text-light);
+}
+
+.btn-oauth .oauth-icon {
+    flex-shrink: 0;
 }
 
 .btn-oauth-google:hover {
@@ -983,6 +1167,16 @@ body {
     border-top: 1px solid var(--border-color);
 }
 
+.profile-sidebar-footer .profile-doc-link {
+    display: block;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    color: var(--primary-color, #0066cc);
+    text-decoration: none;
+}
+.profile-sidebar-footer .profile-doc-link:hover {
+    text-decoration: underline;
+}
 .profile-sidebar-footer .profile-logout-btn {
     width: 100%;
     text-align: center;
@@ -1104,8 +1298,21 @@ body {
 
 /* Мобильный: sidebar как отдельный экран */
 @media (max-width: 768px) {
+    /* В мобильном режиме при открытом окне чата навбар скрыт — отменяем отступ body */
+    body.mobile-chat-open.with-fixed-nav {
+        padding-top: 0;
+    }
+
     .main-nav {
         padding: 0.174rem 0;
+    }
+
+    .nav-doc-toggle.doc-sidebar-toggle {
+        display: flex;
+    }
+
+    body.with-fixed-nav {
+        padding-top: 50px;
     }
 
     .profile-modal-content {

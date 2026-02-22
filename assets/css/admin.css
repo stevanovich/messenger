@@ -31,20 +31,55 @@
 
 .admin-nav-links {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 0.5rem;
 }
 
-.admin-nav-links a {
+.admin-nav-links a.admin-nav-root {
     padding: 0.5rem 1rem;
     border-radius: 8px;
     text-decoration: none;
     color: var(--text-color, #333);
 }
 
-.admin-nav-links a:hover,
-.admin-nav-links a.active {
+.admin-nav-links a.admin-nav-root:hover,
+.admin-nav-links a.admin-nav-root.active {
     background: var(--secondary-color, #eee);
     color: var(--primary-color, #2196f3);
+}
+
+/* Подменю раздела — показывается только когда выбран корневой раздел */
+.admin-nav-sub-wrap {
+    background: var(--bg-light, #f5f5f5);
+    border-top: 1px solid var(--border-color, #eee);
+}
+
+.admin-nav-sub-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0.5rem 1.5rem 0.75rem;
+}
+
+.admin-nav-sub {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.admin-nav-sub a {
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    text-decoration: none;
+    color: var(--text-color, #333);
+}
+
+.admin-nav-sub a:hover,
+.admin-nav-sub a.active {
+    background: var(--bg-color, #fff);
+    color: var(--primary-color, #2196f3);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
 }
 
 .admin-nav-user {
@@ -166,6 +201,8 @@
 .admin-heatmap-view {
     position: relative;
     margin: 0 auto;
+    width: var(--canvas-w, auto);
+    height: var(--canvas-h, auto);
     border: 1px solid var(--border-color, #eee);
     border-radius: 8px;
     overflow: hidden;
@@ -183,8 +220,15 @@
     height: 100%;
     z-index: 0;
     background: var(--bg-light, #f9f9f9);
-    font-size: 13px;
-    color: var(--text-color, #333);
+    overflow: hidden;
+}
+
+.admin-heatmap-mockup-iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    vertical-align: top;
 }
 
 .admin-heatmap-canvas {
@@ -262,6 +306,16 @@
     padding: 6px 12px;
     background: var(--secondary-color, #f0f0f0);
     border-radius: 6px;
+}
+
+.hm-mock-oauth-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.hm-mock-oauth-icon {
+    flex-shrink: 0;
 }
 
 .hm-mock-link {
@@ -588,14 +642,6 @@
 .admin-btn-toggle-contacts.is-visible:hover {
     background: #c8e6c9;
 }
-.admin-btn-toggle-contacts.is-hidden {
-    color: #666;
-    background: #f5f5f5;
-    border-color: #e0e0e0;
-}
-.admin-btn-toggle-contacts.is-hidden:hover {
-    background: #eeeeee;
-}
 .admin-btn-toggle-contacts:disabled {
     opacity: 0.7;
     cursor: wait;
@@ -815,4 +861,16 @@
 }
 .admin-checkbox-label input {
     margin: 0;
+}
+.admin-select {
+    width: 100%;
+    max-width: 28rem;
+    cursor: pointer;
+}
+.admin-list {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+}
+.admin-list--bullets li {
+    margin-bottom: 0.35rem;
 }

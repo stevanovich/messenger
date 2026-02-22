@@ -17,7 +17,7 @@ switch ($action) {
             updateLastSeenIfNeeded();
             global $pdo;
             $uuid = getCurrentUserUuid();
-            $stmt = $pdo->prepare("SELECT uuid, username, display_name, status, avatar, created_at, last_seen, password_hash, visible_in_contacts FROM users WHERE uuid = ?");
+            $stmt = $pdo->prepare("SELECT uuid, username, display_name, status, avatar, created_at, last_seen, password_hash, visible_in_contacts, locale FROM users WHERE uuid = ?");
             $stmt->execute([$uuid]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$user) {

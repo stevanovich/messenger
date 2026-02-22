@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Защита трафика звонков</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-dim: #388bfd66;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --radius: 8px;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+
+        .container { max-width: 900px; margin: 0 auto; }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--accent), #a371f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .subtitle { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        h3 { font-size: 1.05rem; margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--text); }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        tr:hover td { background: rgba(88, 166, 255, 0.06); }
+
+        .diagram {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            overflow-x: auto;
+        }
+        .diagram-title {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+        .mermaid { text-align: center; }
+        .mermaid svg { max-width: 100%; }
+
+        code, .mono {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 0.85em;
+            background: rgba(88, 166, 255, 0.15);
+            padding: 0.15em 0.4em;
+            border-radius: 4px;
+        }
+
+        ul { padding-left: 1.5rem; margin: 0.75rem 0; }
+        li { margin: 0.4rem 0; }
+
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .toc h2 { margin-top: 0; }
+        .toc a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .toc a:hover { text-decoration: underline; }
+        .toc ul { list-style: none; padding-left: 0; }
+        .toc li { margin: 0.5rem 0; }
+
+        .badge {
+            display: inline-block;
+            padding: 0.15em 0.5em;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            margin-left: 0.5rem;
+        }
+        .badge-encrypted { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+        .badge-required { background: var(--accent-dim); color: var(--accent); }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f6f8fa;
+                --surface: #ffffff;
+                --border: #d0d7de;
+                --text: #1f2328;
+                --text-muted: #656d76;
+                --accent: #0969da;
+                --accent-dim: #0969da33;
+            }
+            tr:hover td { background: rgba(9, 105, 218, 0.06); }
+            code, .mono { background: rgba(9, 105, 218, 0.12); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Защита потоков сетевого трафика при звонках</h1>
+        <p class="subtitle">Как обеспечивается конфиденциальность и целостность аудио/видео и сигнализации в мессенджере</p>
+
+        <nav class="toc">
+            <h2>Содержание</h2>
+            <ul>
+                <li><a href="#overview">1. Обзор</a></li>
+                <li><a href="#signaling">2. Защита сигнализации</a></li>
+                <li><a href="#media">3. Защита медиа-потоков</a></li>
+                <li><a href="#dtls-srtp">4. DTLS и SRTP</a></li>
+                <li><a href="#flow">5. Схема потоков</a></li>
+                <li><a href="#threats">6. Модель угроз</a></li>
+                <li><a href="#config">7. Конфигурация</a></li>
+            </ul>
+        </nav>
+
+        <section id="overview">
+            <h2>1. Обзор</h2>
+            <p>Звонки в мессенджере используют <strong>WebRTC</strong> для передачи аудио и видео. Защита трафика достигается на двух уровнях:</p>
+            <ul>
+                <li><strong>Сигнализация</strong> — обмен SDP и ICE-кандидатами для установки соединения идёт по защищённым каналам (HTTPS, WSS).</li>
+                <li><strong>Медиа-потоки</strong> — аудио и видео шифруются по умолчанию с помощью <strong>DTLS-SRTP</strong>, встроенного в WebRTC.</li>
+            </ul>
+            <p>Браузеры <em>требуют</em> шифрование медиа в WebRTC: без DTLS-SRTP соединение не устанавливается. То есть голос и видео между участниками звонка передаются только в зашифрованном виде.</p>
+
+            <table>
+                <thead>
+                    <tr><th>Компонент</th><th>Протокол/механизм</th><th>Что защищает</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>API и WebSocket</td>
+                        <td>HTTPS, WSS <span class="badge badge-encrypted">TLS</span></td>
+                        <td>SDP, ICE, события вызова, аутентификация</td>
+                    </tr>
+                    <tr>
+                        <td>Медиа (RTP)</td>
+                        <td>SRTP <span class="badge badge-encrypted">шифрование</span></td>
+                        <td>Аудио и видео в реальном времени</td>
+                    </tr>
+                    <tr>
+                        <td>Согласование ключей SRTP</td>
+                        <td>DTLS <span class="badge badge-required">обязателен</span></td>
+                        <td>Выработка сессионных ключей между peer’ами</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="signaling">
+            <h2>2. Защита сигнализации</h2>
+            <p>Сигнализация — это обмен служебной информацией: приглашение в звонок, SDP (Session Description Protocol) с кодеками и параметрами, ICE-кандидаты для установки соединения через NAT. Вся эта информация передаётся через приложение, а не напрямую между браузерами.</p>
+
+            <h3>Каналы сигнализации</h3>
+            <table>
+                <thead>
+                    <tr><th>Канал</th><th>Протокол</th><th>Использование</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>API (calls.php, WebSocket)</td>
+                        <td>HTTPS / WSS</td>
+                        <td>Конфиг, SDP offer/answer, ICE-кандидаты, события invite/accept/reject/end</td>
+                    </tr>
+                    <tr>
+                        <td>SIP (опционально)</td>
+                        <td>WSS (SIP over WebSocket)</td>
+                        <td>INVITE, 200 OK, ACK — при режиме SIP</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p>Все запросы к API и события WebSocket идут поверх TLS (HTTPS/WSS). Сервер и клиент используют сертификаты; данные в transit защищены от прослушивания и подмены (при корректной конфигурации TLS).</p>
+
+            <div class="card">
+                <strong>Важно:</strong> SDP содержит метаданные (кодеки, IP-адреса в ICE-кандидатах). Хотя они не раскрывают содержимое разговора, перехват SDP может дать информацию о сетевой топологии. Поэтому передача SDP только по WSS/HTTPS обязательна.
+            </div>
+        </section>
+
+        <section id="media">
+            <h2>3. Защита медиа-потоков</h2>
+            <p>Аудио и видео передаются по <strong>RTP</strong> (Real-time Transport Protocol). WebRTC использует его защищённый вариант — <strong>SRTP</strong> (Secure RTP), который обеспечивает:</p>
+            <ul>
+                <li><strong>Конфиденциальность</strong> — шифрование payload’а RTP/RTCP</li>
+                <li><strong>Целостность</strong> — аутентификация сообщений (HMAC)</li>
+                <li><strong>Защиту от повтора</strong> — счётчик/sequence number</li>
+            </ul>
+
+            <h3>Симметричные ключи SRTP</h3>
+            <p>Ключи для SRTP не передаются в открытом виде. Они вырабатываются в процессе <strong>DTLS handshake</strong> между peer’ами (браузерами или браузером и TURN/медиа-сервером). Протокол DTLS-SRTP (RFC 5764) определяет, как из сессии DTLS получить мастер-ключи для SRTP.</p>
+
+            <p>В типичном сценарии WebRTC (p2p между двумя браузерами):</p>
+            <ol>
+                <li>Каждый peer создаёт свой сертификаат (в браузере — генерируется автоматически)</li>
+                <li>Выполняется DTLS handshake для установления шифрованного канала</li>
+                <li>Из DTLS-сессии экспортируются ключи SRTP</li>
+                <li>Весь RTP/RTCP трафик шифруется этими ключами</li>
+            </ol>
+        </section>
+
+        <section id="dtls-srtp">
+            <h2>4. DTLS и SRTP</h2>
+
+            <h3>4.1 DTLS (Datagram TLS)</h3>
+            <p>DTLS — это адаптация TLS для UDP. В WebRTC он используется:</p>
+            <ul>
+                <li>Для защиты канала DataChannel (если используется)</li>
+                <li>Как основа для выработки ключей SRTP (DTLS-SRTP)</li>
+            </ul>
+            <p>Алгоритмы шифрования в DTLS определяются согласованием между браузерами. Современные браузеры поддерживают, в частности, AES-GCM, ChaCha20-Poly1305.</p>
+
+            <h3>4.2 Ключевая схема DTLS-SRTP</h3>
+            <div class="diagram">
+                <div class="diagram-title">Выработка ключей SRTP из DTLS</div>
+                <div class="mermaid">
+flowchart LR
+    subgraph A[Браузер A]
+        D1[DTLS Handshake]
+        K1[Ключи SRTP]
+    end
+    subgraph B[Браузер B]
+        D2[DTLS Handshake]
+        K2[Ключи SRTP]
+    end
+    D1 <-->|UDP, зашифровано| D2
+    D1 --> K1
+    D2 --> K2
+    K1 --> M1[SRTP аудио/видео]
+    K2 --> M2[SRTP аудио/видео]
+    M1 <-->|зашифрованный RTP| M2
+                </div>
+            </div>
+
+            <p>Сервер мессенджера (backend) <strong>не участвует</strong> в DTLS handshake и не знает ключей SRTP. SDP и ICE передаются через него, но медиа идут напрямую peer-to-peer (или через TURN-реле при симметричном NAT).</p>
+        </section>
+
+        <section id="flow">
+            <h2>5. Схема потоков</h2>
+            <div class="diagram">
+                <div class="diagram-title">Потоки данных при звонке</div>
+                <div class="mermaid">
+flowchart TB
+    subgraph Client1[Клиент 1]
+        UI1[UI звонка]
+        PC1[RTCPeerConnection]
+    end
+    subgraph Server[Сервер мессенджера]
+        API[API / WebSocket]
+    end
+    subgraph Client2[Клиент 2]
+        UI2[UI звонка]
+        PC2[RTCPeerConnection]
+    end
+
+    UI1 <-->|HTTPS/WSS| API
+    UI2 <-->|HTTPS/WSS| API
+    API -->|SDP, ICE| UI1
+    API -->|SDP, ICE| UI2
+
+    PC1 <-.->|DTLS-SRTP, UDP| PC2
+    UI1 --> PC1
+    PC1 --> UI1
+    UI2 --> PC2
+    PC2 --> UI2
+                </div>
+            </div>
+
+            <ul>
+                <li><strong>Сплошные линии</strong> — защищены TLS (HTTPS/WSS)</li>
+                <li><strong>Пунктир</strong> — медиа по UDP, защищены DTLS-SRTP (p2p или через TURN)</li>
+            </ul>
+        </section>
+
+        <section id="threats">
+            <h2>6. Модель угроз</h2>
+            <table>
+                <thead>
+                    <tr><th>Угроза</th><th>Защита</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Перехват аудио/видео</td>
+                        <td>SRTP — медиа шифруются; без ключей DTLS прослушать невозможно</td>
+                    </tr>
+                    <tr>
+                        <td>Перехват сигнализации (SDP, ICE)</td>
+                        <td>WSS/HTTPS — TLS шифрует весь трафик к серверу</td>
+                    </tr>
+                    <tr>
+                        <td>Man-in-the-Middle на медиа</td>
+                        <td>DTLS обеспечивает аутентификацию peer’ов (сертификаты); подмена требует компрометации TLS/DTLS</td>
+                    </tr>
+                    <tr>
+                        <td>Утечка ключей на сервере</td>
+                        <td>Сервер не хранит и не получает ключи SRTP — они только у участников звонка</td>
+                    </tr>
+                    <tr>
+                        <td>TURN-сервер видит трафик</td>
+                        <td>При использовании TURN трафик идёт зашифрованный (SRTP). TURN ретранслирует зашифрованные пакеты, не расшифровывая их</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="config">
+            <h2>7. Конфигурация</h2>
+            <p>Для корректной работы и безопасности звонков важно:</p>
+            <ul>
+                <li><strong>HTTPS и WSS</strong> — приложение должно работать по HTTPS; WebSocket — по WSS</li>
+                <li><strong>STUN</strong> — для обхода NAT (например, <code>stun:stun.l.google.com:19302</code>)</li>
+                <li><strong>TURN</strong> (опционально) — при симметричном NAT; TURN-сервер должен поддерживать TLS</li>
+                <li><strong>SIP (опционально)</strong> — при использовании SIP звонки идут по WSS (SIP over WebSocket)</li>
+            </ul>
+            <p>Параметры задаются в <code>config/config.php</code> (SIP_WS_URL, SIP_STUN_URL, SIP_TURN_*). Подробнее см. <a href="CALLS_SETTINGS_AND_STORAGE.md" style="color: var(--accent);">CALLS_SETTINGS_AND_STORAGE.md</a>.</p>
+        </section>
+
+        <p style="margin-top: 3rem; color: var(--text-muted); font-size: 0.9rem;">
+            Связанные документы: <a href="e2ee-key-mechanism.html" style="color: var(--accent);">E2EE: Механизм ключей</a>, <a href="CALLS_SETTINGS_AND_STORAGE.md" style="color: var(--accent);">CALLS_SETTINGS_AND_STORAGE.md</a>, <a href="plans/SIP_CALLS_PLAN.md" style="color: var(--accent);">SIP_CALLS_PLAN.md</a><br>
+            Код: <code>assets/js/calls.js</code>, <code>assets/js/call-room.js</code>, <code>api/calls.php</code>
+        </p>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#388bfd',
+                primaryTextColor: '#e6edf3',
+                primaryBorderColor: '#58a6ff',
+                lineColor: '#8b949e',
+                secondaryColor: '#21262d',
+                tertiaryColor: '#161b22'
+            },
+            flowchart: { curve: 'basis' }
+        });
+    </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 <?php
-$pageTitle = 'Тепловые карты';
 require_once __DIR__ . '/common.php';
+$pageTitle = t('admin.heatmaps');
 global $pdo;
 
 // Проверка наличия новых колонок (viewport, zone) — после миграции migrate_analytics_clicks_heatmap_zones.sql
@@ -14,12 +14,12 @@ try {
 
 // Типы страниц для тепловых карт (1–6) и соответствие путям из analytics
 $HEATMAP_PAGE_TYPES = [
-    'login'  => ['label' => 'Логин', 'paths' => ['/login.php', '/login']],
-    'register' => ['label' => 'Регистрация', 'paths' => ['/register.php', '/register']],
-    'chats'  => ['label' => 'Список чатов/контактов', 'paths' => ['/', '/index.php', '/index']],
-    'chat'   => ['label' => 'Чат/беседа', 'paths' => ['/', '/index.php', '/index']],
-    'call'   => ['label' => 'Звонок (видео/аудио, 1-на-1/группа/внешний)', 'paths' => ['/call-room.php', '/call-room']],
-    'join'   => ['label' => 'Подключение к беседе', 'paths' => ['/join-call.php', '/join-conversation.php', '/join-call', '/join-conversation']],
+    'login'  => ['label' => t('admin.heatmaps_login'), 'paths' => ['/login.php', '/login']],
+    'register' => ['label' => t('admin.heatmaps_register'), 'paths' => ['/register.php', '/register']],
+    'chats'  => ['label' => t('admin.heatmaps_chats'), 'paths' => ['/', '/index.php', '/index']],
+    'chat'   => ['label' => t('admin.heatmaps_chat'), 'paths' => ['/', '/index.php', '/index']],
+    'call'   => ['label' => t('admin.heatmaps_call'), 'paths' => ['/call-room.php', '/call-room']],
+    'join'   => ['label' => t('admin.heatmaps_join'), 'paths' => ['/join-call.php', '/join-conversation.php', '/join-call', '/join-conversation']],
 ];
 
 $pageFilter = isset($_GET['page']) ? (string)$_GET['page'] : '';
@@ -91,23 +91,25 @@ $pagePlaceholders = count($heatmapPagePaths) > 0 ? implode(',', array_fill(0, co
 
 // Список зон с подписями (для фильтра и подписи под картой)
 $HEATMAP_ZONES = [
-    'sidebar'        => 'Сайдбар',
-    'sidebar_tabs'   => 'Вкладки Чаты/Контакты',
-    'chats_panel'    => 'Список чатов',
-    'contacts_panel' => 'Контакты',
-    'chat_main'      => 'Область чата',
-    'chat_empty'     => '«Выберите чат»',
-    'chat_window'    => 'Окно чата',
-    'chat_header'    => 'Шапка чата',
-    'chat_messages'  => 'Сообщения',
-    'chat_input'     => 'Поле ввода',
-    'new_chat_btn'   => 'Кнопка «Новая беседа»',
-    'viewport'       => 'Вся область',
+    'sidebar'        => t('admin.heatmaps_zone_sidebar'),
+    'sidebar_tabs'   => t('admin.heatmaps_zone_sidebar_tabs'),
+    'chats_panel'    => t('admin.heatmaps_zone_chats_panel'),
+    'contacts_panel' => t('admin.heatmaps_zone_contacts_panel'),
+    'chat_main'      => t('admin.heatmaps_zone_chat_main'),
+    'chat_empty'     => t('admin.heatmaps_zone_chat_empty'),
+    'chat_window'    => t('admin.heatmaps_zone_chat_window'),
+    'chat_header'    => t('admin.heatmaps_zone_chat_header'),
+    'chat_messages'  => t('admin.heatmaps_zone_chat_messages'),
+    'chat_input'     => t('admin.heatmaps_zone_chat_input'),
+    'new_chat_btn'   => t('admin.heatmaps_zone_new_chat_btn'),
+    'viewport'       => t('admin.heatmaps_zone_viewport'),
 ];
 
 const MOBILE_MAX_WIDTH = 768;
 const CANVAS_W = 800;
 const CANVAS_H = 600;
+const MOBILE_CANVAS_W = 375;
+const MOBILE_CANVAS_H = 667;
 const ZONE_CANVAS_W = 400;
 const ZONE_CANVAS_H = 300;
 const NORM_GRID_W = 80;
@@ -222,6 +224,10 @@ if ($heatmapPage !== '' && !empty($heatmapPagePaths)) {
             list($gx, $gy) = explode('_', $key);
             $clicks[] = ['gx' => (int)$gx, 'gy' => (int)$gy, 'cnt' => $cnt];
         }
+        if ($deviceFilter === 'mobile') {
+            $canvasW = MOBILE_CANVAS_W;
+            $canvasH = MOBILE_CANVAS_H;
+        }
     } else {
         // Старый режим: сырые пиксели (без viewport/zone)
         $stmt = $pdo->prepare("
@@ -255,8 +261,8 @@ foreach ($clicks as $c) {
 }
 
 // Масштаб: в нормализованном режиме одна «ячейка» = (canvasW/gridW) x (canvasH/gridH) пикселей
-$cellPxW = $heatmapMode === 'zone' ? (ZONE_CANVAS_W / ZONE_GRID_W) : (CANVAS_W / NORM_GRID_W);
-$cellPxH = $heatmapMode === 'zone' ? (ZONE_CANVAS_H / ZONE_GRID_H) : (CANVAS_H / NORM_GRID_H);
+$cellPxW = $heatmapMode === 'zone' ? (ZONE_CANVAS_W / ZONE_GRID_W) : ($canvasW / NORM_GRID_W);
+$cellPxH = $heatmapMode === 'zone' ? (ZONE_CANVAS_H / ZONE_GRID_H) : ($canvasH / NORM_GRID_H);
 
 include __DIR__ . '/header.php';
 ?>
@@ -333,88 +339,16 @@ include __DIR__ . '/header.php';
         $showMockup = ($hasNewColumns && $zoneFilter === '');
         $mockupKey = $heatmapPage;
         ?>
-        <div class="admin-heatmap-view <?= $zoneFilter !== '' ? 'admin-heatmap-view--zone' : '' ?>" style="width:<?= (int)$canvasW ?>px; height:<?= (int)$canvasH ?>px;">
+        <div class="admin-heatmap-view <?= $zoneFilter !== '' ? 'admin-heatmap-view--zone' : '' ?>" style="--canvas-w:<?= (int)$canvasW ?>px;--canvas-h:<?= (int)$canvasH ?>px">
             <?php if ($showMockup): ?>
             <div class="admin-heatmap-mockup admin-heatmap-mockup--<?= escape($mockupKey) ?>" aria-hidden="true">
-                <?php if ($mockupKey === 'login'): ?>
-                <div class="hm-mock-auth">
-                    <div class="hm-mock-auth-box">
-                        <h1>Вход в мессенджер</h1>
-                        <div class="hm-mock-form">
-                            <label>Имя пользователя</label>
-                            <input type="text" value="пример_пользователя" readonly>
-                            <label>Пароль</label>
-                            <input type="password" value="······" readonly>
-                            <button type="button" class="hm-mock-btn">Войти</button>
-                        </div>
-                        <p class="hm-mock-oauth">или <span>Google</span> <span>Яндекс</span></p>
-                        <p class="hm-mock-link">Нет аккаунта? Зарегистрироваться</p>
-                    </div>
-                </div>
-                <?php elseif ($mockupKey === 'register'): ?>
-                <div class="hm-mock-auth">
-                    <div class="hm-mock-auth-box">
-                        <h1>Регистрация</h1>
-                        <div class="hm-mock-form">
-                            <label>Имя пользователя</label>
-                            <input type="text" value="новый_пользователь" readonly>
-                            <label>Пароль</label>
-                            <input type="password" value="······" readonly>
-                            <label>Подтвердите пароль</label>
-                            <input type="password" value="······" readonly>
-                            <button type="button" class="hm-mock-btn">Зарегистрироваться</button>
-                        </div>
-                        <p class="hm-mock-link">Уже есть аккаунт? Войти</p>
-                    </div>
-                </div>
-                <?php elseif ($mockupKey === 'chats' || $mockupKey === 'chat'): ?>
-                <div class="hm-mock-app">
-                    <div class="hm-mock-sidebar">
-                        <div class="hm-mock-tabs"><span class="active">Чаты</span><span>Контакты</span></div>
-                        <div class="hm-mock-search"><input type="text" placeholder="Поиск чатов..." readonly></div>
-                        <div class="hm-mock-list">
-                            <div class="hm-mock-chat-item"><span class="hm-mock-avatar">А</span><span>Алексей</span><span>Привет!</span></div>
-                            <div class="hm-mock-chat-item"><span class="hm-mock-avatar">М</span><span>Мария</span><span>До завтра</span></div>
-                            <div class="hm-mock-chat-item"><span class="hm-mock-avatar">Г</span><span>Группа</span><span>Иван: ок</span></div>
-                        </div>
-                        <button type="button" class="hm-mock-btn-new">Новая беседа</button>
-                    </div>
-                    <div class="hm-mock-chat">
-                        <div class="hm-mock-chat-header">← Имя чата</div>
-                        <div class="hm-mock-messages">
-                            <div class="hm-mock-msg other">Пример входящего сообщения</div>
-                            <div class="hm-mock-msg self">Пример своего ответа</div>
-                        </div>
-                        <div class="hm-mock-input-bar"><span>⋯</span><input type="text" placeholder="Введите сообщение..." readonly><span>➤</span></div>
-                    </div>
-                </div>
-                <?php elseif ($mockupKey === 'call'): ?>
-                <div class="hm-mock-call">
-                    <div class="hm-mock-call-header">
-                        <span>Звонок</span>
-                        <span>1:23</span>
-                    </div>
-                    <div class="hm-mock-call-video">
-                        <div class="hm-mock-video-main">Видео участника</div>
-                        <div class="hm-mock-video-pip">Вы</div>
-                    </div>
-                    <div class="hm-mock-call-actions">
-                        <button type="button">🎤</button>
-                        <button type="button">📹</button>
-                        <button type="button">📞</button>
-                    </div>
-                </div>
-                <?php elseif ($mockupKey === 'join'): ?>
-                <div class="hm-mock-auth">
-                    <div class="hm-mock-auth-box hm-mock-join">
-                        <h1>Присоединиться к звонку</h1>
-                        <p class="hm-mock-join-text">Вас приглашают в звонок. Приглашает: Иван</p>
-                        <div class="hm-mock-join-actions">
-                            <button type="button" class="hm-mock-btn">Присоединиться</button>
-                        </div>
-                    </div>
-                </div>
-                <?php endif; ?>
+                <iframe
+                    src="<?= escape(BASE_URL) ?>admin/heatmap-frame.php?page=<?= escape($mockupKey === 'chat' ? 'chats' : $mockupKey) ?>&device=<?= escape($deviceFilter) ?>"
+                    class="admin-heatmap-mockup-iframe"
+                    width="<?= (int)$canvasW ?>"
+                    height="<?= (int)$canvasH ?>"
+                    title="<?= escape($HEATMAP_PAGE_TYPES[$heatmapPage]['label'] ?? $mockupKey) ?>"
+                ></iframe>
             </div>
             <?php endif; ?>
             <canvas id="heatmapCanvas" class="admin-heatmap-canvas" width="<?= (int)$canvasW ?>" height="<?= (int)$canvasH ?>"

@@ -1,6 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/locale.php';
+initLocale();
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -17,6 +19,43 @@ global $pdo;
 try {
 switch ($method) {
     case 'GET':
+        // Поиск по тексту сообщений в переписках пользователя (только незашифрованные)
+        $searchAction = $_GET['action'] ?? '';
+        $searchQuery = trim((string)($_GET['q'] ?? ''));
+        if ($searchAction === 'search') {
+            if (mb_strlen($searchQuery) < 2) {
+                jsonSuccess(['results' => []]);
+                exit;
+            }
+            $searchTerm = '%' . $searchQuery . '%';
+            $limit = min((int)($_GET['limit'] ?? 30), 50);
+            $stmt = $pdo->prepare("
+                SELECT m.id AS message_id, m.conversation_id, m.content, m.created_at
+                FROM messages m
+                INNER JOIN conversation_participants cp ON cp.conversation_id = m.conversation_id AND cp.user_uuid = ?
+                WHERE m.deleted_at IS NULL AND (m.encrypted = 0 OR m.encrypted IS NULL) AND m.type = 'text'
+                  AND m.content LIKE ?
+                ORDER BY m.created_at DESC
+                LIMIT ?
+            ");
+            $stmt->execute([$currentUserUuid, $searchTerm, $limit]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $snippetLen = 80;
+            $results = [];
+            foreach ($rows as $r) {
+                $content = (string)($r['content'] ?? '');
+                $preview = mb_strlen($content) > $snippetLen ? mb_substr($content, 0, $snippetLen) . '…' : $content;
+                $results[] = [
+                    'conversation_id' => (int)$r['conversation_id'],
+                    'message_id' => (int)$r['message_id'],
+                    'content_preview' => $preview,
+                    'created_at' => $r['created_at'] ?? null,
+                ];
+            }
+            jsonSuccess(['results' => $results]);
+            exit;
+        }
+
         // Получение сообщений
         $conversationId = $_GET['conversation_id'] ?? 0;
         $lastMessageId = $_GET['last_message_id'] ?? 0;
@@ -28,15 +67,15 @@ switch ($method) {
         
         // Проверка участия в беседе
         $stmt = $pdo->prepare("
-            SELECT cp.conversation_id 
-            FROM conversation_participants cp 
+            SELECT cp.conversation_id
+            FROM conversation_participants cp
             WHERE cp.conversation_id = ? AND cp.user_uuid = ?
         ");
         $stmt->execute([$conversationId, $currentUserUuid]);
         if (!$stmt->fetch()) {
             jsonError('Нет доступа к этой беседе', 403);
         }
-        
+
         // Получение сообщений (LEFT JOIN — user_uuid может быть NULL для анонимизированных)
         if ($lastMessageId > 0) {
             $stmt = $pdo->prepare("
@@ -45,7 +84,7 @@ switch ($method) {
                        (SELECT COUNT(*) FROM message_deliveries md WHERE md.message_id = m.id) as delivery_count
                 FROM messages m
                 LEFT JOIN users u ON m.user_uuid = u.uuid
-                WHERE m.conversation_id = ? 
+                WHERE m.conversation_id = ?
                   AND m.id > ?
                   AND m.deleted_at IS NULL
                 ORDER BY m.created_at ASC
@@ -60,7 +99,7 @@ switch ($method) {
                        (SELECT COUNT(*) FROM message_deliveries md WHERE md.message_id = m.id) as delivery_count
                 FROM messages m
                 LEFT JOIN users u ON m.user_uuid = u.uuid
-                WHERE m.conversation_id = ? 
+                WHERE m.conversation_id = ?
                   AND m.deleted_at IS NULL
                 ORDER BY m.created_at DESC
                 LIMIT ?
@@ -107,7 +146,7 @@ switch ($method) {
         if (!empty($replyToIds)) {
             $placeholders = implode(',', array_fill(0, count($replyToIds), '?'));
             $stmt = $pdo->prepare("
-                SELECT r.id, r.content, r.type, r.file_name, r.deleted_at, u.username, u.display_name
+                SELECT r.id, r.content, r.type, r.file_name, r.deleted_at, r.encrypted, u.username, u.display_name
                 FROM messages r
                 LEFT JOIN users u ON r.user_uuid = u.uuid
                 WHERE r.id IN ($placeholders)
@@ -135,6 +174,7 @@ switch ($method) {
         }
         // read_details: кто и когда прочитал (для tooltip)
         $readDetailsMap = [];
+        $readByMeIds = [];
         if (!empty($messageIds)) {
             $placeholders = implode(',', array_fill(0, count($messageIds), '?'));
             $stmt = $pdo->prepare("
@@ -155,6 +195,15 @@ switch ($method) {
                     'read_at' => $row['read_at'],
                 ];
             }
+            // Сообщения, прочитанные текущим пользователем (для прокрутки к первому непрочитанному)
+            $stmt = $pdo->prepare("
+                SELECT message_id FROM message_reads
+                WHERE user_uuid = ? AND message_id IN ($placeholders)
+            ");
+            $stmt->execute(array_merge([$currentUserUuid], $messageIds));
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $readByMeIds[(int) $row['message_id']] = true;
+            }
         }
 
         // recipient_count: количество получателей (участники − 1)
@@ -171,6 +220,9 @@ switch ($method) {
             $message['recipient_count'] = $recipientCount;
             $message['delivery_count'] = (int) ($message['delivery_count'] ?? 0);
             $message['read_count'] = (int) ($message['read_count'] ?? 0);
+            // Свои сообщения считаем всегда прочитанными; чужие — по message_reads
+            $message['read_by_me'] = ($message['user_uuid'] ?? '') === $currentUserUuid
+                || !empty($readByMeIds[(int) $message['id']]);
             $rid = isset($message['reply_to_id']) ? (int) $message['reply_to_id'] : 0;
             if ($rid > 0) {
                 $message['reply_to'] = $replyToMap[$rid] ?? [
@@ -237,12 +289,12 @@ switch ($method) {
             ");
             $stmt->execute([$targetConversationId]);
             if ((int) $stmt->fetchColumn() < 2) {
-                jsonError('Невозможно отправить сообщение: собеседник удалён', 403);
+                jsonError(t('chat.cannot_send_contact_deleted'), 403);
             }
             // Получить сообщения: только из бесед, где пользователь участник, не удалённые, не call
             $placeholders = implode(',', array_fill(0, count($messageIds), '?'));
             $stmt = $pdo->prepare("
-                SELECT m.id, m.content, m.encrypted, m.type, m.file_path, m.file_name, m.file_size, m.user_uuid
+                SELECT m.id, m.content, m.encrypted, m.encryption_algorithm, m.type, m.file_path, m.file_name, m.file_size, m.user_uuid
                 FROM messages m
                 INNER JOIN conversation_participants cp ON cp.conversation_id = m.conversation_id AND cp.user_uuid = ?
                 WHERE m.id IN ($placeholders) AND m.deleted_at IS NULL AND m.type != 'call'
@@ -267,17 +319,33 @@ switch ($method) {
                     $ordered[] = $byId[$mid];
                 }
             }
+            // Опционально: клиент присылает уже расшифрованный и при необходимости зашифрованный для целевого чата контент (E2EE: пересланные сообщения должны быть читаемы в целевом чате)
+            $clientMessages = $data['messages'] ?? [];
+            $useClientContent = is_array($clientMessages) && count($clientMessages) === count($ordered);
+
             $created = [];
             $insertStmt = $pdo->prepare("
-                INSERT INTO messages (conversation_id, user_uuid, content, encrypted, reply_to_id, forwarded_from_message_id, type, file_path, file_name, file_size)
-                VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+                INSERT INTO messages (conversation_id, user_uuid, content, encrypted, encryption_algorithm, reply_to_id, forwarded_from_message_id, type, file_path, file_name, file_size)
+                VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
             ");
-            foreach ($ordered as $row) {
+            foreach ($ordered as $idx => $row) {
+                if ($useClientContent && isset($clientMessages[$idx]) && is_array($clientMessages[$idx])) {
+                    $cm = $clientMessages[$idx];
+                    $content = isset($cm['content']) ? (string) $cm['content'] : ($row['content'] ?? '');
+                    $encrypted = isset($cm['encrypted']) ? (int) (bool) $cm['encrypted'] : (int) ($row['encrypted'] ?? 0);
+                    $encAlgo = isset($cm['encryption_algorithm']) ? trim((string) $cm['encryption_algorithm']) : null;
+                    if ($encAlgo === '') $encAlgo = null;
+                } else {
+                    $content = $row['content'] ?? '';
+                    $encrypted = (int) ($row['encrypted'] ?? 0);
+                    $encAlgo = isset($row['encryption_algorithm']) ? $row['encryption_algorithm'] : null;
+                }
                 $insertStmt->execute([
                     $targetConversationId,
                     $currentUserUuid,
-                    $row['content'] ?? '',
-                    (int) ($row['encrypted'] ?? 0),
+                    $content,
+                    $encrypted,
+                    $encAlgo,
                     $row['id'],
                     $row['type'] ?? 'text',
                     $row['file_path'] ?? null,
@@ -427,7 +495,98 @@ switch ($method) {
             break;
         }
 
-        // Отметка сообщений как прочитанных
+        // Отметка сообщений как прочитанных до указанного id (включительно)
+        if ($action === 'mark_read_up_to') {
+            $conversationId = (int)($data['conversation_id'] ?? 0);
+            $messageId = (int)($data['message_id'] ?? 0);
+            if (!$conversationId || !$messageId) {
+                jsonError('Укажите conversation_id и message_id');
+            }
+            $stmt = $pdo->prepare("
+                SELECT cp.conversation_id 
+                FROM conversation_participants cp 
+                WHERE cp.conversation_id = ? AND cp.user_uuid = ?
+            ");
+            $stmt->execute([$conversationId, $currentUserUuid]);
+            if (!$stmt->fetch()) {
+                jsonError('Нет доступа к этой беседе', 403);
+            }
+            $stmt = $pdo->prepare("
+                INSERT IGNORE INTO message_reads (message_id, user_uuid)
+                SELECT m.id, ?
+                FROM messages m
+                WHERE m.conversation_id = ?
+                  AND m.id <= ?
+                  AND m.user_uuid != ?
+                  AND m.deleted_at IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM message_reads mr
+                      WHERE mr.message_id = m.id AND mr.user_uuid = ?
+                  )
+            ");
+            $stmt->execute([$currentUserUuid, $conversationId, $messageId, $currentUserUuid, $currentUserUuid]);
+            $affected = $stmt->rowCount();
+            if ($affected > 0 && function_exists('notifyUserEvent')) {
+                $stmt = $pdo->prepare("
+                    SELECT m.id, m.user_uuid FROM messages m
+                    WHERE m.conversation_id = ? AND m.id <= ? AND m.user_uuid != ? AND m.deleted_at IS NULL
+                ");
+                $stmt->execute([$conversationId, $messageId, $currentUserUuid]);
+                $affectedMessages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $authorByMessage = [];
+                foreach ($affectedMessages as $row) {
+                    $authorByMessage[(int)$row['id']] = $row['user_uuid'];
+                }
+                $stmt = $pdo->prepare("SELECT COUNT(*) FROM conversation_participants WHERE conversation_id = ? AND (hidden_at IS NULL OR hidden_at > NOW())");
+                $stmt->execute([$conversationId]);
+                $recipientCount = max(0, (int)$stmt->fetchColumn() - 1);
+                foreach ($affectedMessages as $row) {
+                    $mid = (int)$row['id'];
+                    $stmt = $pdo->prepare("
+                        SELECT mr.read_at, u.display_name, u.username
+                        FROM message_reads mr JOIN users u ON mr.user_uuid = u.uuid
+                        WHERE mr.message_id = ?
+                        ORDER BY mr.read_at ASC
+                    ");
+                    $stmt->execute([$mid]);
+                    $readDetails = [];
+                    while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                        $readDetails[] = [
+                            'username' => trim($r['display_name'] ?? '') ?: trim($r['username'] ?? '') ?: '—',
+                            'read_at' => $r['read_at'],
+                        ];
+                    }
+                    $payload = [
+                        'message_id' => $mid,
+                        'conversation_id' => $conversationId,
+                        'read_count' => count($readDetails),
+                        'read_details' => $readDetails,
+                        'recipient_count' => $recipientCount,
+                    ];
+                    $authorUuid = $authorByMessage[$mid] ?? null;
+                    if ($authorUuid) {
+                        notifyUserEvent('message.status_update', $authorUuid, $conversationId, $payload);
+                    }
+                    notifyWebSocketEvent('message.status_update', $conversationId, $payload);
+                }
+            }
+            $stmt = $pdo->prepare("
+                SELECT COUNT(*) FROM messages m
+                WHERE m.conversation_id = ? AND m.deleted_at IS NULL
+                  AND m.user_uuid != ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM message_reads mr
+                      WHERE mr.message_id = m.id AND mr.user_uuid = ?
+                  )
+            ");
+            $stmt->execute([$conversationId, $currentUserUuid, $currentUserUuid]);
+            $unreadCount = (int) $stmt->fetchColumn();
+            // Реакции не трогаем — они помечаются только через mark_reactions_seen_for_message при просмотре своих сообщений
+            jsonSuccess(['unread_count' => $unreadCount]);
+            break;
+        }
+
+        // Отметка сообщений как прочитанных (вся беседа)
         if ($action === 'mark_read') {
             $conversationId = (int)($data['conversation_id'] ?? 0);
             if (!$conversationId) {
@@ -523,7 +682,87 @@ switch ($method) {
                     notifyWebSocketEvent('message.status_update', $conversationId, $payload);
                 }
             }
+            // Реакции не помечаем здесь — только через mark_reactions_seen_for_message при просмотре своих сообщений
             jsonSuccess(null, 'Прочитано');
+            break;
+        }
+
+        // Отметка реакций на одном сообщении как просмотренных (по мере прокрутки к сообщению)
+        if ($action === 'mark_reactions_seen_for_message') {
+            $conversationId = (int)($data['conversation_id'] ?? 0);
+            $messageId = (int)($data['message_id'] ?? 0);
+            if (!$conversationId || !$messageId) {
+                jsonError('Укажите conversation_id и message_id');
+            }
+            $stmt = $pdo->prepare("
+                SELECT 1 FROM conversation_participants
+                WHERE conversation_id = ? AND user_uuid = ? AND hidden_at IS NULL
+            ");
+            $stmt->execute([$conversationId, $currentUserUuid]);
+            if (!$stmt->fetch()) {
+                jsonError('Нет доступа к этой беседе', 403);
+            }
+            // Сообщение должно быть своим (реакции считаются только на свои сообщения)
+            $stmt = $pdo->prepare("
+                SELECT m.id FROM messages m
+                WHERE m.id = ? AND m.conversation_id = ? AND m.user_uuid = ? AND m.deleted_at IS NULL
+            ");
+            $stmt->execute([$messageId, $conversationId, $currentUserUuid]);
+            if (!$stmt->fetch()) {
+                jsonSuccess(['unseen_reactions_count' => null]);
+                break;
+            }
+            // Максимальное время реакции других на это сообщение
+            $stmt = $pdo->prepare("
+                SELECT MAX(mr.created_at) FROM message_reactions mr
+                WHERE mr.message_id = ? AND mr.user_uuid != ?
+            ");
+            $stmt->execute([$messageId, $currentUserUuid]);
+            $maxReactionAt = $stmt->fetchColumn();
+            if ($maxReactionAt) {
+                $stmt = $pdo->prepare("
+                    UPDATE conversation_participants
+                    SET last_reactions_seen_at = GREATEST(COALESCE(last_reactions_seen_at, '1970-01-01 00:00:00'), ?)
+                    WHERE conversation_id = ? AND user_uuid = ?
+                ");
+                $stmt->execute([$maxReactionAt, $conversationId, $currentUserUuid]);
+            }
+            // Текущее число неувиденных реакций после обновления
+            $stmt = $pdo->prepare("
+                SELECT COUNT(*)
+                FROM message_reactions mr
+                INNER JOIN messages m ON m.id = mr.message_id AND m.conversation_id = ? AND m.user_uuid = ? AND m.deleted_at IS NULL
+                INNER JOIN conversation_participants cp ON cp.conversation_id = ? AND cp.user_uuid = ?
+                WHERE mr.user_uuid != ?
+                  AND (cp.last_reactions_seen_at IS NULL OR mr.created_at > cp.last_reactions_seen_at)
+            ");
+            $stmt->execute([$conversationId, $currentUserUuid, $conversationId, $currentUserUuid, $currentUserUuid]);
+            $unseenCount = (int) $stmt->fetchColumn();
+            jsonSuccess(['unseen_reactions_count' => $unseenCount]);
+            break;
+        }
+
+        // Отметка реакций в беседе как просмотренных (неувиденные в списке чатов)
+        if ($action === 'mark_reactions_seen') {
+            $conversationId = (int)($data['conversation_id'] ?? 0);
+            if (!$conversationId) {
+                jsonError('Не указан ID беседы');
+            }
+            $stmt = $pdo->prepare("
+                UPDATE conversation_participants SET last_reactions_seen_at = NOW()
+                WHERE conversation_id = ? AND user_uuid = ?
+            ");
+            $stmt->execute([$conversationId, $currentUserUuid]);
+            if ($stmt->rowCount() === 0) {
+                $stmt = $pdo->prepare("
+                    SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_uuid = ? AND hidden_at IS NULL
+                ");
+                $stmt->execute([$conversationId, $currentUserUuid]);
+                if (!$stmt->fetch()) {
+                    jsonError('Нет доступа к этой беседе', 403);
+                }
+            }
+            jsonSuccess(['unseen_reactions_count' => 0]);
             break;
         }
 
@@ -536,6 +775,10 @@ switch ($method) {
         $fileSize = $data['file_size'] ?? null;
         $replyToId = isset($data['reply_to_id']) ? (int) $data['reply_to_id'] : 0;
         $encrypted = isset($data['encrypted']) ? (int) (bool) $data['encrypted'] : 0;
+        $encryptionAlgorithm = isset($data['encryption_algorithm']) ? trim((string) $data['encryption_algorithm']) : null;
+        if ($encryptionAlgorithm === '') {
+            $encryptionAlgorithm = null;
+        }
         
         if (!$conversationId) {
             jsonError('Не указан ID беседы');
@@ -568,7 +811,7 @@ switch ($method) {
         $stmt->execute([$conversationId]);
         $participantCount = (int) $stmt->fetchColumn();
         if ($participantCount < 2) {
-            jsonError('Невозможно отправить сообщение: собеседник удалён', 403);
+            jsonError(t('chat.cannot_send_contact_deleted'), 403);
         }
         
         // Валидация reply_to_id: то же conversation_id, сообщение не удалено
@@ -583,12 +826,25 @@ switch ($method) {
             }
         }
         
-        // Вставка сообщения (encrypted: 0 = plaintext, 1 = E2EE ciphertext)
-        $stmt = $pdo->prepare("
-            INSERT INTO messages (conversation_id, user_uuid, content, encrypted, reply_to_id, forwarded_from_message_id, type, file_path, file_name, file_size)
-            VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
-        ");
-        $stmt->execute([$conversationId, $currentUserUuid, $content, $encrypted, $replyToId ?: null, $type, $filePath, $fileName, $fileSize]);
+        // Вставка сообщения (encrypted: 0 = plaintext, 1 = E2EE ciphertext; encryption_algorithm для мультиалгоритма E2EE)
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO messages (conversation_id, user_uuid, content, encrypted, encryption_algorithm, reply_to_id, forwarded_from_message_id, type, file_path, file_name, file_size)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+            ");
+            $stmt->execute([$conversationId, $currentUserUuid, $content, $encrypted, $encryptionAlgorithm, $replyToId ?: null, $type, $filePath, $fileName, $fileSize]);
+        } catch (PDOException $e) {
+            $msg = $e->getMessage();
+            if (strpos($msg, 'encryption_algorithm') !== false && (strpos($msg, 'Unknown column') !== false || strpos($msg, '1054') !== false)) {
+                $stmt = $pdo->prepare("
+                    INSERT INTO messages (conversation_id, user_uuid, content, encrypted, reply_to_id, forwarded_from_message_id, type, file_path, file_name, file_size)
+                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$conversationId, $currentUserUuid, $content, $encrypted, $replyToId ?: null, $type, $filePath, $fileName, $fileSize]);
+            } else {
+                throw $e;
+            }
+        }
         $messageId = $pdo->lastInsertId();
         
         // Получение созданного сообщения с reply_to
@@ -606,7 +862,7 @@ switch ($method) {
         $message['reactions'] = [];
         if (!empty($message['reply_to_id'])) {
             $stmt = $pdo->prepare("
-                SELECT r.id, r.content, r.type, r.file_name, r.deleted_at, u.username, u.display_name
+                SELECT r.id, r.content, r.type, r.file_name, r.deleted_at, r.encrypted, u.username, u.display_name
                 FROM messages r
                 LEFT JOIN users u ON r.user_uuid = u.uuid
                 WHERE r.id = ?

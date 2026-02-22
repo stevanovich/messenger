@@ -19,7 +19,7 @@
 - ✅ Загрузка изображений и документов
 - ✅ Редактирование и удаление сообщений
 - ✅ Real-time обновления: **WebSocket** (новые сообщения, реакции, список бесед); при недоступности WebSocket — **polling** каждые 2 секунды (fallback)
-- ✅ **Сквозное шифрование (E2EE)** — сообщения шифруются на клиенте; разблокировка чатов по WebAuthn или PIN; резерв ключей на сервере (опционально)
+- ✅ **Сквозное шифрование (E2EE)** — сообщения шифруются на клиенте; разблокировка чатов по WebAuthn или PIN; резерв ключей на сервере (опционально); поддержка нескольких алгоритмов (приоритет в `config/e2ee_algorithms.php`); для ГОСТ — согласование ключей в `config/e2ee_options.php` (ECDH-P256 или GOST-R-34.10)
 
 ### UX функции
 - ✅ Список контактов — вкладка «Контакты» в боковой панели, выбор контакта для чата
@@ -34,7 +34,7 @@
 - ✅ Статистика использования — дашборд, сообщения за 7 дней
 - ✅ Тепловые карты кликов — по страницам за выбранный период
 - ✅ Аналитика событий — список событий с фильтром по типу
-- ✅ Резерв ключей E2EE — настройка защиты ключей (лимиты, блокировки), раздел «Защита ключей» в админке
+- ✅ Резерв ключей E2EE — настройка защиты ключей (лимиты, блокировки), раздел «Защита ключей» в админке; раздел «Криптография» — список и порядок алгоритмов шифрования
 
 ## Установка
 
@@ -46,11 +46,14 @@ cd messenger
 composer install
 ```
 
+При использовании E2EE с алгоритмом ГОСТ и согласованием ключей GOST-R-34.10 может понадобиться локальный бандл: `npm install` и `npm run build:gost-vko` (см. `package.json`).
+
 ### 2. Требования
 - PHP 7.3 или выше
 - MySQL 5.7 или выше
 - Apache с mod_rewrite (или другой веб-сервер)
 - Расширения PHP: PDO, PDO_MySQL, GD (для работы с изображениями)
+- Node.js и npm — опционально, только для сборки локального бандла ГОСТ VKO (`npm run build:gost-vko`)
 
 ### 3. Настройка конфигурации
 
@@ -63,7 +66,7 @@ cp config/database.example.php config/database.php
 
 2. Отредактируйте `config/database.php` — укажите host, dbname, username и пароль БД (файл не должен попадать в репозиторий).
 3. Отредактируйте `config/config.php` — укажите BASE_URL, ADMIN_URL, OAuth-ключи (Google, Yandex), VAPID для push (см. `tools/generate_vapid_keys.php`), ADMIN_UUIDS. Секреты храните только в config.php, не коммитьте их в Git.
-4. При использовании E2EE: скопируйте `config/e2ee_key_backup.example.php` в `config/e2ee_key_backup.php` и при необходимости настройте лимиты и блокировки (редактируется также из админки — раздел «Защита ключей»).
+4. При использовании E2EE: скопируйте `config/e2ee_key_backup.example.php` в `config/e2ee_key_backup.php` и при необходимости настройте лимиты и блокировки (редактируется из админки — раздел «Защита ключей»). Список и приоритет алгоритмов шифрования задаётся в `config/e2ee_algorithms.php` или из админки — раздел «Криптография»; при нескольких алгоритмах клиент выбирает первый общий с собеседником по порядку из конфига. Согласование ключей для ГОСТ (ECDH-P256 или GOST-R-34.10) настраивается в `config/e2ee_options.php` (скопируйте из `config/e2ee_options.example.php`) или в админке — «Криптография» → «Согласование ключей для ГОСТ».
 
 ### 4. Настройка базы данных
 
@@ -74,10 +77,10 @@ cp config/database.example.php config/database.php
 mysql -u <user> -p <database> < sql/schema.sql
 ```
 
-3. При обновлении с более старой версии примените миграции из `sql/migrations/` (например `002_add_conversation_member_keys.sql` и др.). Для E2EE предусмотрены скрипты `tools/run_e2ee_migration.php` и `tools/run_e2ee_migration_002.php` (запускать при необходимости по инструкциям в миграциях).
+3. При обновлении с более старой версии примените миграции из `sql/migrations/` (например `002_add_conversation_member_keys.sql`, `005_e2ee_multi_algorithm_public_keys.sql` и др.). Для E2EE предусмотрены скрипты `tools/run_e2ee_migration.php` и `tools/run_e2ee_migration_002.php` (запускать при необходимости по инструкциям в миграциях).
 4. Узнайте UUID администратора: зарегистрируйтесь, войдите и откройте `/api/auth.php?action=me` — добавьте UUID в `ADMIN_UUIDS` в `config/config.php`
 
-**Публикация на GitHub без секретов.** Файлы с секретами (`config/config.php`, `config/database.php` и др.) перечислены в `.gitignore`: они не должны попадать в публичный репозиторий. В своей рабочей ветке (например `master`) вы можете хранить их в Git для работы и пуша на свой сервер (origin). Чтобы публиковать код на GitHub без секретов: пушите туда отдельную ветку (например `main`), в которой эти файлы не закоммичены — создайте ветку из текущей, выполните `git rm --cached config/config.php config/database.php config/e2ee_key_backup.php config/reset_admin_password.php`, закоммитьте и пушьте эту ветку в GitHub.
+**Публикация на GitHub без секретов.** Файлы с секретами (`config/config.php`, `config/database.php`, `config/e2ee_key_backup.php`, `config/e2ee_options.php` и др.) перечислены в `.gitignore`: они не должны попадать в публичный репозиторий. В своей рабочей ветке (например `master`) вы можете хранить их в Git для работы и пуша на свой сервер (origin). Чтобы публиковать код на GitHub без секретов: пушите туда отдельную ветку (например `main`), в которой эти файлы не закоммичены — создайте ветку из текущей, выполните `git rm --cached config/config.php config/database.php config/e2ee_key_backup.php config/e2ee_options.php config/reset_admin_password.php`, закоммитьте и пушьте эту ветку в GitHub.
 
 ### 5. Настройка прав доступа
 
@@ -134,31 +137,37 @@ location ~ \.php$ {
 
 ```
 messenger/
-├── admin/              # Админ-панель (доступ по правам, см. config: ADMIN_UUIDS), key_backup.php — резерв ключей E2EE
+├── admin/              # Админ-панель (доступ по правам, см. config: ADMIN_UUIDS); e2ee_algorithms.php — алгоритмы E2EE и согласование ключей ГОСТ, key_backup.php — резерв ключей
 ├── api/                # API endpoints
 │   ├── auth.php
 │   ├── keys.php        # E2EE: публичные ключи, key_backup, decryption_failed, limits
 │   ├── messages.php
 │   ├── conversations.php
+│   ├── conversation_invite.php
 │   ├── users.php
 │   ├── analytics.php
 │   ├── upload.php
 │   ├── reactions.php
 │   ├── stickers.php
+│   ├── sticker_file.php
+│   ├── link_preview.php
+│   ├── push_subscriptions.php
 │   ├── calls.php
 │   └── ...
 ├── assets/
 │   ├── css/            # Стили
 │   └── js/             # JavaScript (в т.ч. e2ee-keys.js, e2ee-webauthn-lock.js)
 ├── auth/               # OAuth (Google, Yandex)
-├── config/             # Конфигурация (config.php, database.php, e2ee_key_backup.php — из *.example)
+├── config/             # Конфигурация (config.php, database.php, e2ee_key_backup.php, e2ee_options.php — из *.example)
 ├── includes/           # Вспомогательные файлы
+├── locale/             # Локализация
 ├── sql/
 │   ├── schema.sql      # Схема БД
 │   └── migrations/     # Миграции (E2EE и др.)
 ├── uploads/            # Загруженные файлы
 ├── websocket/          # WebSocket-сервер
-├── docs/               # Документация и планы
+├── docs/               # Документация (e2ee-key-mechanism.html, call-traffic-protection.html, CALLS_SETTINGS_AND_STORAGE.md и др.)
+├── package.json        # Сборка бандла ГОСТ VKO (npm run build:gost-vko), опционально
 ├── index.php
 ├── login.php
 ├── register.php

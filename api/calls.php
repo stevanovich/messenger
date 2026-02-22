@@ -5,6 +5,8 @@
  */
 session_start();
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/locale.php';
+initLocale();
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -651,11 +653,11 @@ switch ($action) {
         $stmt->execute([$endedAt, $durationSec, $callId]);
 
         $withVideo = (int)($call['with_video'] ?? 0);
-        $label = $withVideo ? 'Видеозвонок' : 'Звонок';
+        $label = $withVideo ? t('call.video') : t('call.voice');
         $mins = floor($durationSec / 60);
         $secs = $durationSec % 60;
-        $durationText = $mins > 0 ? $mins . ' мин' : $secs . ' сек';
-        $content = $label . ' завершён, длительность ' . $durationText;
+        $durationText = $mins > 0 ? $mins . ' ' . t('call.duration_min') : $secs . ' ' . t('call.duration_sec');
+        $content = $label . ' ' . t('call.completed') . ', ' . t('call.duration') . $durationText;
 
         $stmt = $pdo->prepare("
             INSERT INTO messages (conversation_id, user_uuid, content, type)
@@ -997,7 +999,7 @@ switch ($action) {
             jsonError('Гость не найден или звонок завершён', 404);
         }
         $stmt = $pdo->prepare("
-            SELECT gcp.user_uuid, COALESCE(u.display_name, u.username, 'Участник') AS display_name, gcp.joined_at, gcp.left_at
+            SELECT gcp.user_uuid, COALESCE(u.display_name, u.username, 'Участник') AS display_name, u.avatar, gcp.joined_at, gcp.left_at
             FROM group_call_participants gcp
             LEFT JOIN users u ON u.uuid = gcp.user_uuid
             WHERE gcp.group_call_id = ? AND gcp.joined_at IS NOT NULL AND gcp.left_at IS NULL
@@ -1201,11 +1203,11 @@ switch ($action) {
             $stmt->execute([$groupCallId]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             $durationSec = $row ? max(0, time() - strtotime($row['started_at'])) : 0;
-            $label = $call['with_video'] ? 'Групповой видеозвонок' : 'Групповой звонок';
+            $label = $call['with_video'] ? t('call.group_video') : t('call.group_voice');
             $mins = floor($durationSec / 60);
             $secs = $durationSec % 60;
-            $durationText = $mins > 0 ? $mins . ' мин' : $secs . ' сек';
-            $content = $label . ' завершён, длительность ' . $durationText;
+            $durationText = $mins > 0 ? $mins . ' ' . t('call.duration_min') : $secs . ' ' . t('call.duration_sec');
+            $content = $label . ' ' . t('call.completed') . ', ' . t('call.duration') . $durationText;
 
             $stmt = $pdo->prepare("
                 INSERT INTO messages (conversation_id, user_uuid, content, type, group_call_id)
@@ -1257,11 +1259,11 @@ switch ($action) {
         $stmt = $pdo->prepare("UPDATE group_calls SET ended_at = ? WHERE id = ?");
         $stmt->execute([$now, $groupCallId]);
         $durationSec = max(0, time() - strtotime($call['started_at']));
-        $label = $call['with_video'] ? 'Групповой видеозвонок' : 'Групповой звонок';
+        $label = $call['with_video'] ? t('call.group_video') : t('call.group_voice');
         $mins = floor($durationSec / 60);
         $secs = $durationSec % 60;
-        $durationText = $mins > 0 ? $mins . ' мин' : $secs . ' сек';
-        $content = $label . ' завершён для всех, длительность ' . $durationText;
+        $durationText = $mins > 0 ? $mins . ' ' . t('call.duration_min') : $secs . ' ' . t('call.duration_sec');
+        $content = $label . ' ' . t('call.completed_for_all') . ', ' . t('call.duration') . $durationText;
         $stmt = $pdo->prepare("
             INSERT INTO messages (conversation_id, user_uuid, content, type, group_call_id)
             VALUES (?, NULL, ?, 'call', ?)
@@ -1316,7 +1318,7 @@ switch ($action) {
         }
 
         $stmt = $pdo->prepare("
-            SELECT gcp.user_uuid, COALESCE(u.display_name, u.username, 'Участник') AS display_name, gcp.joined_at, gcp.left_at
+            SELECT gcp.user_uuid, COALESCE(u.display_name, u.username, 'Участник') AS display_name, u.avatar, gcp.joined_at, gcp.left_at
             FROM group_call_participants gcp
             LEFT JOIN users u ON u.uuid = gcp.user_uuid
             WHERE gcp.group_call_id = ? AND gcp.joined_at IS NOT NULL AND gcp.left_at IS NULL
@@ -1415,7 +1417,7 @@ switch ($action) {
             jsonError('Нет доступа к этому звонку', 404);
         }
         $stmt = $pdo->prepare("
-            SELECT gcp.user_uuid, COALESCE(u.display_name, u.username, 'Участник') AS display_name, gcp.joined_at, gcp.left_at
+            SELECT gcp.user_uuid, COALESCE(u.display_name, u.username, 'Участник') AS display_name, u.avatar, gcp.joined_at, gcp.left_at
             FROM group_call_participants gcp
             LEFT JOIN users u ON u.uuid = gcp.user_uuid
             WHERE gcp.group_call_id = ? AND gcp.joined_at IS NOT NULL

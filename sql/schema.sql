@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `avatar` varchar(255) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `last_seen` datetime DEFAULT NULL,
+  `locale` varchar(10) DEFAULT NULL,
   PRIMARY KEY (`uuid`),
   UNIQUE KEY `username` (`username`),
   KEY `last_seen` (`last_seen`)
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS `conversation_participants` (
   `notifications_enabled` tinyint(1) NOT NULL DEFAULT 1,
   `joined_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `hidden_at` datetime DEFAULT NULL,
+  `last_reactions_seen_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `conversation_user` (`conversation_id`,`user_uuid`),
   KEY `user_uuid` (`user_uuid`),
@@ -75,6 +77,7 @@ CREATE TABLE IF NOT EXISTS `messages` (
   `user_uuid` char(36) DEFAULT NULL,
   `content` text DEFAULT NULL,
   `encrypted` tinyint(1) NOT NULL DEFAULT 0,
+  `encryption_algorithm` varchar(32) DEFAULT NULL,
   `reply_to_id` int(11) DEFAULT NULL,
   `forwarded_from_message_id` int(11) DEFAULT NULL,
   `type` enum('text','image','file','sticker','call') NOT NULL DEFAULT 'text',
@@ -106,9 +109,9 @@ CREATE TABLE IF NOT EXISTS `messages` (
 CREATE TABLE IF NOT EXISTS `user_public_keys` (
   `user_uuid` char(36) NOT NULL,
   `public_key_jwk` text NOT NULL,
-  `algorithm` varchar(32) NOT NULL DEFAULT 'ECDH-P256',
+  `algorithm` varchar(32) NOT NULL DEFAULT 'ECDH-P256-AES-GCM',
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`user_uuid`),
+  PRIMARY KEY (`user_uuid`, `algorithm`),
   CONSTRAINT `user_public_keys_user_fk` FOREIGN KEY (`user_uuid`) REFERENCES `users` (`uuid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -121,6 +124,7 @@ CREATE TABLE IF NOT EXISTS `conversation_member_keys` (
   `user_uuid` char(36) NOT NULL,
   `encrypted_by_uuid` char(36) NOT NULL,
   `key_blob` text NOT NULL,
+  `algorithm` varchar(32) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`conversation_id`, `user_uuid`),
   KEY `encrypted_by_uuid` (`encrypted_by_uuid`),
@@ -167,6 +171,22 @@ CREATE TABLE IF NOT EXISTS `message_reactions` (
 -- --------------------------------------------------------
 
 --
+-- Таблица: supported_emojis (единый перечень эмодзи для inline, стикеров и реакций)
+--
+
+CREATE TABLE IF NOT EXISTS `supported_emojis` (
+  `emoji` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `keywords` varchar(500) DEFAULT '',
+  `category` varchar(64) DEFAULT 'Эмодзи',
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `hidden` TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`emoji`),
+  KEY `category` (`category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Таблица: stickers
 --
 
@@ -175,9 +195,27 @@ CREATE TABLE IF NOT EXISTS `stickers` (
   `name` varchar(100) NOT NULL,
   `category` varchar(50) DEFAULT NULL,
   `file_path` varchar(255) NOT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `hidden` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `category` (`category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Таблица: reaction_categories (управляемые категории для эмодзи/стикеров)
+--
+
+CREATE TABLE IF NOT EXISTS `reaction_categories` (
+  `name` varchar(64) NOT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `name_ru` varchar(64) DEFAULT NULL,
+  `name_en` varchar(64) DEFAULT NULL,
+  `name_sr` varchar(64) DEFAULT NULL,
+  `hidden` tinyint(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------

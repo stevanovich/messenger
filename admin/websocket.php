@@ -49,6 +49,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $message = 'Не удалось сохранить настройку. Выдайте веб-серверу права на запись в папку config/ (файл connection_status_display.json).';
             $messageType = 'error';
         }
+    } elseif ($action === 'set_twemoji_enabled') {
+        $enabled = isset($_POST['enabled']) ? (string) $_POST['enabled'] : '';
+        $enabledBool = ($enabled === '1' || $enabled === 'true');
+        if (saveTwemojiEnabled($enabledBool)) {
+            if ($isAjax) {
+                while (ob_get_level()) ob_end_clean();
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => true, 'enabled' => $enabledBool]);
+                exit;
+            }
+            $redirectAfterPost = (defined('BASE_URL') ? BASE_URL : '') . 'admin/websocket.php';
+        } else {
+            $message = 'Не удалось сохранить настройку. Выдайте веб-серверу права на запись в папку config/ (файл twemoji_enabled.json).';
+            $messageType = 'error';
+        }
     } elseif (!function_exists('exec')) {
         $message = 'Функция exec() отключена на сервере. Управление возможно только через SSH (websocket/start.sh / websocket/stop.sh).';
         $messageType = 'error';
@@ -235,6 +250,17 @@ include __DIR__ . '/header.php';
         <input type="checkbox" id="adminShowConnectionStatus" class="admin-toggle-input" <?= $showConnectionStatus ? 'checked' : '' ?>>
         <span class="admin-toggle-slider"></span>
         <span class="admin-toggle-text" id="adminShowConnectionStatusLabel"><?= $showConnectionStatus ? 'Показывать' : 'Скрывать' ?></span>
+    </label>
+</div>
+
+<?php $twemojiEnabled = getTwemojiEnabled(); ?>
+<div class="admin-websocket-toggle-card admin-card">
+    <div class="admin-card-title">Twemoji (отображение эмодзи)</div>
+    <p class="admin-websocket-toggle-desc">Использовать Twemoji для отображения эмодзи (в т.ч. флагов) в чате, панели стикеров и в настройках. При выключении эмодзи показываются системным шрифтом. Настройка действует для всех пользователей.</p>
+    <label class="admin-toggle-label">
+        <input type="checkbox" id="adminTwemojiEnabled" class="admin-toggle-input" <?= $twemojiEnabled ? 'checked' : '' ?>>
+        <span class="admin-toggle-slider"></span>
+        <span class="admin-toggle-text" id="adminTwemojiEnabledLabel"><?= $twemojiEnabled ? 'Включено' : 'Выключено' ?></span>
     </label>
 </div>
 
@@ -513,6 +539,37 @@ include __DIR__ . '/header.php';
                 .catch(function() {
                     toggleInput.checked = prevChecked;
                     toggleLabel.textContent = prevChecked ? 'Показывать' : 'Скрывать';
+                });
+        });
+    }
+    var twemojiInput = document.getElementById('adminTwemojiEnabled');
+    var twemojiLabel = document.getElementById('adminTwemojiEnabledLabel');
+    if (twemojiInput && twemojiLabel) {
+        twemojiInput.addEventListener('change', function() {
+            var enabled = twemojiInput.checked;
+            var prevChecked = !enabled;
+            var fd = new FormData();
+            fd.set('action', 'set_twemoji_enabled');
+            fd.set('enabled', enabled ? '1' : '0');
+            fd.set('ajax', '1');
+            fetch(window.location.href, {
+                method: 'POST',
+                body: fd,
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data && data.success) {
+                        twemojiLabel.textContent = enabled ? 'Включено' : 'Выключено';
+                    } else {
+                        twemojiInput.checked = prevChecked;
+                        twemojiLabel.textContent = prevChecked ? 'Включено' : 'Выключено';
+                    }
+                })
+                .catch(function() {
+                    twemojiInput.checked = prevChecked;
+                    twemojiLabel.textContent = prevChecked ? 'Включено' : 'Выключено';
                 });
         });
     }

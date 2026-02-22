@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E2EE: Механизм ключей шифрования</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-dim: #388bfd66;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --radius: 8px;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+
+        .container { max-width: 900px; margin: 0 auto; }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--accent), #a371f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .subtitle { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-top: 2.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        tr:hover td { background: rgba(88, 166, 255, 0.06); }
+
+        .diagram {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            overflow-x: auto;
+        }
+        .diagram-title {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+        .mermaid { text-align: center; }
+        .mermaid svg { max-width: 100%; }
+
+        code, .mono {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 0.85em;
+            background: rgba(88, 166, 255, 0.15);
+            padding: 0.15em 0.4em;
+            border-radius: 4px;
+        }
+
+        ul { padding-left: 1.5rem; margin: 0.75rem 0; }
+        li { margin: 0.4rem 0; }
+
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .toc h2 { margin-top: 0; }
+        .toc a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .toc a:hover { text-decoration: underline; }
+        .toc ul { list-style: none; padding-left: 0; }
+        .toc li { margin: 0.5rem 0; }
+
+        .badge {
+            display: inline-block;
+            padding: 0.15em 0.5em;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            margin-left: 0.5rem;
+        }
+        .badge-client { background: var(--accent-dim); color: var(--accent); }
+        .badge-server { background: rgba(63, 185, 80, 0.2); color: var(--success); }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f6f8fa;
+                --surface: #ffffff;
+                --border: #d0d7de;
+                --text: #1f2328;
+                --text-muted: #656d76;
+                --accent: #0969da;
+                --accent-dim: #0969da33;
+            }
+            tr:hover td { background: rgba(9, 105, 218, 0.06); }
+            code, .mono { background: rgba(9, 105, 218, 0.12); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>E2EE: Механизм ключей шифрования</h1>
+        <p class="subtitle">Выработка, хранение и использование ключей end-to-end шифрования в проекте Messenger</p>
+
+        <nav class="toc">
+            <h2>Содержание</h2>
+            <ul>
+                <li><a href="#overview">1. Обзор</a></li>
+                <li><a href="#generation">2. Выработка ключей</a></li>
+                <li><a href="#storage">3. Хранение ключей</a></li>
+                <li><a href="#usage">4. Использование ключей</a></li>
+                <li><a href="#diagrams">5. Схемы (UML)</a></li>
+                <li><a href="#config">6. Конфигурация</a></li>
+            </ul>
+        </nav>
+
+        <section id="overview">
+            <h2>1. Обзор</h2>
+            <p>Проект поддерживает мультиалгоритмное E2EE с согласованием ключей по <strong>ECDH P-256</strong> или <strong>ГОСТ Р 34.10-2012 (VKO)</strong> и симметричным шифрованием <strong>AES-GCM</strong>, <strong>Кузнечик-MGM</strong> или <strong>Магма-MGM</strong>. Приоритет алгоритмов задаётся только на сервере.</p>
+
+            <h3>Типы ключей</h3>
+            <table>
+                <thead>
+                    <tr><th>Тип</th><th>Где хранится</th><th>Назначение</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Пары ключей <span class="badge badge-client">клиент</span></td>
+                        <td>sessionStorage, опционально localStorage (WebAuthn), сервер (публичные)</td>
+                        <td>Согласование общего секрета (ECDH/VKO)</td>
+                    </tr>
+                    <tr>
+                        <td>Ключ беседы <span class="badge badge-client">клиент</span></td>
+                        <td>Память (CONV_KEY_CACHE)</td>
+                        <td>Шифрование сообщений в личном чате</td>
+                    </tr>
+                    <tr>
+                        <td>Ключ группы <span class="badge badge-server">сервер</span></td>
+                        <td>Зашифрованные blob в <code>conversation_member_keys</code></td>
+                        <td>Шифрование сообщений в групповом чате</td>
+                    </tr>
+                    <tr>
+                        <td>Резервная копия <span class="badge badge-server">сервер</span></td>
+                        <td><code>user_key_backup.key_blob</code></td>
+                        <td>Восстановление при смене устройства</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="generation">
+            <h2>2. Выработка ключей</h2>
+
+            <h3>2.1 Пары ключей пользователя</h3>
+            <div class="card">
+                <p><strong>ECDH P-256</strong> — через Web Crypto API: <code>generateKey(ECDH, P-256)</code>, экспорт в JWK.</p>
+                <p><strong>ГОСТ Р 34.10 (VKO)</strong> — при <code>gost_key_agreement === 'GOST-R-34.10'</code>: приватный 64 байта, публичный вычисляется библиотекой VKO, кривая <code>ID_GOSTR3410_2012_512_PARAM_SET_A</code>.</p>
+            </div>
+
+            <h3>2.2 Ключ беседы (личный чат)</h3>
+            <div class="card">
+                <ul>
+                    <li><strong>ECDH:</strong> deriveBits → SHA-256 → AES-GCM ключ</li>
+                    <li><strong>VKO:</strong> <code>kek_34102012256(curve, myPriv, remotePub, UKM)</code> — UKM = SHA-256("e2ee-vko-{conversationId}")[0..8]</li>
+                </ul>
+            </div>
+
+            <h3>2.3 Ключ группы</h3>
+            <div class="card">
+                <p>Случайный AES-GCM 256 бит. Для каждого участника шифруется его публичным ключом и сохраняется в <code>conversation_member_keys</code>.</p>
+            </div>
+        </section>
+
+        <section id="storage">
+            <h2>3. Хранение ключей</h2>
+            <table>
+                <thead>
+                    <tr><th>Место</th><th>Ключ/таблица</th><th>Формат</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>sessionStorage</td>
+                        <td><code>e2ee_keypairs_jwk</code></td>
+                        <td>JSON по алгоритмам: { publicKey, privateKey } или { type: 'gost', privateKeyB64, publicKeyB64 }</td>
+                    </tr>
+                    <tr>
+                        <td>localStorage (WebAuthn)</td>
+                        <td><code>e2ee_lock_blob</code></td>
+                        <td>saltB64:ivB64:ctB64 — ключи зашифрованы PIN (PBKDF2 100k, AES-GCM)</td>
+                    </tr>
+                    <tr>
+                        <td>user_public_keys</td>
+                        <td>(user_uuid, algorithm)</td>
+                        <td>public_key_jwk, algorithm</td>
+                    </tr>
+                    <tr>
+                        <td>conversation_member_keys</td>
+                        <td>(conversation_id, user_uuid)</td>
+                        <td>key_blob (зашифрован публичным ключом участника), algorithm</td>
+                    </tr>
+                    <tr>
+                        <td>user_key_backup</td>
+                        <td>user_uuid</td>
+                        <td>key_blob = salt:iv:ct, внутри JSON { keys: {...} }, пароль → PBKDF2</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="usage">
+            <h2>4. Использование ключей</h2>
+            <h3>Инициализация при загрузке</h3>
+            <ol>
+                <li>GET config → algorithms, gost_key_agreement</li>
+                <li>Проверка WebAuthn lock → если включена, ждём разблокировки</li>
+                <li>Проверка резерва → если есть blob и нет ключей, событие e2ee-need-restore</li>
+                <li>Иначе: загрузка/генерация ключей, регистрация публичных на сервере</li>
+            </ol>
+            <h3>Личный чат</h3>
+            <ol>
+                <li>Получить публичные ключи собеседника</li>
+                <li>Выбрать первый общий алгоритм</li>
+                <li>Вывести ключ беседы, закэшировать</li>
+                <li>Шифрование: ivBase64:ciphertextBase64</li>
+            </ol>
+            <h3>Групповой чат</h3>
+            <ol>
+                <li>GET group_key → расшифровать своим приватным</li>
+                <li>Если нет — сгенерировать, зашифровать для каждого участника, POST set_group_key</li>
+            </ol>
+        </section>
+
+        <section id="diagrams">
+            <h2>5. Схемы (UML)</h2>
+
+            <div class="diagram">
+                <div class="diagram-title">Диаграмма последовательности: генерация и регистрация ключей</div>
+                <div class="mermaid">
+sequenceDiagram
+    participant U as Пользователь
+    participant K as e2ee-keys.js
+    participant S as sessionStorage
+    participant C as Web Crypto / VKO
+    participant A as API keys.php
+    participant D as user_public_keys
+
+    U->>K: Загрузка страницы
+    K->>A: GET action=config
+    A-->>K: algorithms, gost_key_agreement
+    K->>S: loadKeyPairsFromStorage()
+    alt Ключи есть
+        S-->>K: keyPairsByAlgorithm
+    else Ключей нет
+        K->>C: generateKey(ECDH/VKO)
+        C-->>K: KeyPair
+        K->>S: saveKeyPairsToStorage()
+    end
+    loop Для каждого алгоритма
+        K->>A: POST public_key, algorithm
+        A->>D: INSERT/UPDATE
+    end
+    K-->>U: init завершён
+                </div>
+            </div>
+
+            <div class="diagram">
+                <div class="diagram-title">Диаграмма последовательности: шифрование сообщения в личном чате</div>
+                <div class="mermaid">
+sequenceDiagram
+    participant U as Пользователь
+    participant K as e2ee-keys.js
+    participant A as API
+    participant C as Web Crypto
+
+    U->>K: Отправить сообщение
+    K->>K: getOrCreateConversationKey(convId, userUuid)
+    alt Ключа нет в кэше
+        K->>A: GET публичные ключи
+        A-->>K: remoteKeys[]
+        K->>K: deriveConversationKey()
+        K->>K: CONV_KEY_CACHE.set()
+    end
+    K->>K: encryptPlaintext(plaintext, key)
+    K->>C: AES-GCM / GOST encrypt
+    C-->>K: ivBase64:ciphertextBase64
+    K-->>U: payload для отправки
+                </div>
+            </div>
+
+            <div class="diagram">
+                <div class="diagram-title">Диаграмма состояний: жизненный цикл пары ключей</div>
+                <div class="mermaid">
+stateDiagram-v2
+    [*] --> Проверка: Загрузка
+    Проверка --> WebAuthnLocked: Блокировка устройства
+    Проверка --> NeedRestore: Резерв есть, ключей нет
+    Проверка --> LoadFromStorage: Ключи в sessionStorage
+    Проверка --> GenerateNew: Нет ключей
+    WebAuthnLocked --> InMemory: Разблокировка
+    NeedRestore --> InMemory: restoreFromKeyBackupBlob
+    LoadFromStorage --> InMemory: Импорт
+    GenerateNew --> InMemory: generateKeyPairForAlgorithm
+    InMemory --> BackupOptional: createAndSaveKeyBackup
+    InMemory --> [*]: Закрытие вкладки
+                </div>
+            </div>
+
+            <div class="diagram">
+                <div class="diagram-title">Потоки данных ключей (компоненты)</div>
+                <div class="mermaid">
+flowchart TB
+    subgraph Browser["Браузер"]
+        SS[sessionStorage]
+        LS[localStorage WebAuthn]
+        MEM[CONV_KEY_CACHE]
+        KEYS[e2ee-keys.js]
+        LOCK[e2ee-webauthn-lock.js]
+    end
+    subgraph Server["Сервер"]
+        UPK[(user_public_keys)]
+        CMK[(conversation_member_keys)]
+        UKB[(user_key_backup)]
+    end
+    KEYS <--> SS
+    KEYS <--> MEM
+    LOCK <--> LS
+    LOCK -.->|разблокировка| KEYS
+    KEYS <-->|POST/GET| UPK
+    KEYS <-->|group_key| CMK
+    KEYS <-->|key_backup| UKB
+                </div>
+            </div>
+
+            <div class="diagram">
+                <div class="diagram-title">Схема классов: сущности ключей</div>
+                <div class="mermaid">
+classDiagram
+    class KeyPairsByAlgorithm {
+        -keyPairsByAlgorithm Object
+        +loadKeyPairsFromStorage()
+        +saveKeyPairsToStorage()
+        +generateKeyPairForAlgorithm(algorithm)
+    }
+    class UserKeyPair {
+        +publicKey
+        +privateKey
+        +type gost
+    }
+    class ConversationKeyCache {
+        -CONV_KEY_CACHE Map
+        +getOrCreateConversationKey()
+        +getConversationDecryptionKeys()
+    }
+    class DerivedKey {
+        +encryptionKey CryptoKey
+        +decryptionKeys CryptoKey[]
+        +algorithm string
+    }
+    class UserPublicKeys {
+        +user_uuid
+        +algorithm
+        +public_key_jwk
+    }
+    class ConversationMemberKeys {
+        +conversation_id
+        +user_uuid
+        +key_blob
+    }
+    KeyPairsByAlgorithm *-- UserKeyPair
+    ConversationKeyCache *-- DerivedKey
+    UserKeyPair ..> DerivedKey : deriveConversationKey
+    UserKeyPair --> UserPublicKeys : публичный
+                </div>
+            </div>
+        </section>
+
+        <section id="config">
+            <h2>6. Конфигурация</h2>
+            <table>
+                <thead>
+                    <tr><th>Файл</th><th>Описание</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>config/e2ee_algorithms.php</code></td>
+                        <td>Список алгоритмов в порядке приоритета</td>
+                    </tr>
+                    <tr>
+                        <td><code>config/e2ee_options.php</code></td>
+                        <td>gost_key_agreement: ECDH-P256 | GOST-R-34.10</td>
+                    </tr>
+                    <tr>
+                        <td><code>config/e2ee_key_backup.php</code></td>
+                        <td>Rate limit, блокировка при подборе пароля, KDF итерации</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <p style="margin-top: 3rem; color: var(--text-muted); font-size: 0.9rem;">
+            Связанные документы: <a href="call-traffic-protection.html" style="color: var(--accent);">Защита трафика звонков</a>, <a href="plans/PLAN_E2EE_MULTI_ALGORITHM.md" style="color: var(--accent);">PLAN_E2EE_MULTI_ALGORITHM.md</a><br>
+            Код: <code>assets/js/e2ee-keys.js</code>, <code>e2ee-gost.js</code>, <code>e2ee-webauthn-lock.js</code>, <code>api/keys.php</code>
+        </p>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                primaryColor: '#388bfd',
+                primaryTextColor: '#e6edf3',
+                primaryBorderColor: '#58a6ff',
+                lineColor: '#8b949e',
+                secondaryColor: '#21262d',
+                tertiaryColor: '#161b22'
+            },
+            flowchart: { curve: 'basis' },
+            sequence: { actorMargin: 50 }
+        });
+    </script>
+</body>
+</html>

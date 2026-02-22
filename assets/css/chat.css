@@ -1,5 +1,26 @@
 /* Стили для чата */
 
+/* Плейсхолдер пустого списка чатов */
+.chats-empty-placeholder {
+    padding: 2rem;
+    text-align: center;
+    color: #999;
+}
+
+/* Аудио элемент скрыт визуально (звонки) */
+.call-panel-audio-visually-hidden {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+}
+
+/* Скрытие изображений при ошибке загрузки */
+.message-image.is-error,
+.message-sticker-img.is-error {
+    display: none;
+}
+
 .messenger-container {
     display: flex;
     height: calc(100vh - 58px);
@@ -7,43 +28,58 @@
     margin: 0 auto;
     background: var(--bg-color);
 }
+.messenger-container.has-call-minimized-bar {
+    flex-direction: column;
+}
+.messenger-content-row {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+}
 
-/* Боковая панель с чатами: скролл только в .chats-panel-scroll */
+/* Боковая панель с чатами: скролл только в .chats-panel-scroll; ширину можно менять перетаскиванием до 50% окна */
 .chats-sidebar {
     position: relative;
     width: 350px;
+    min-width: 220px;
+    max-width: 50%;
     flex-shrink: 0;
+    resize: horizontal;
+    overflow: hidden;
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
     background: var(--bg-light);
 }
 
-/* Кнопка «Новый чат» внизу сайдбара (в потоке, чтобы скроллилась только .chats-panel-scroll) */
+/* Кнопка «Новый чат» — круглая FAB в правом нижнем углу .chats-sidebar */
 .btn-new-chat {
-    flex-shrink: 0;
-    width: 100%;
-    padding: 1.3rem 1rem;
+    position: absolute;
+    right: 1.25rem;
+    bottom: max(1.25rem, env(safe-area-inset-bottom, 0));
+    width: 3.5rem;
+    height: 3.5rem;
+    padding: 0;
     margin: 0;
     border: none;
-    border-top: 1px solid var(--border-color);
-    border-radius: 0;
+    border-radius: 50%;
     background: var(--primary-color);
     color: white;
-    font-size: 1rem;
+    font-size: 1.75rem;
+    line-height: 1;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    transition: background-color 0.2s;
-    z-index: 50;
+    transition: background-color 0.2s, transform 0.2s;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .btn-new-chat:hover {
     background: var(--primary-dark);
+    transform: scale(1.05);
 }
 
 .sidebar-tabs {
@@ -93,10 +129,7 @@
     overflow-x: hidden;
 }
 
-.chats-panel-scroll {
-    /* Скролл только здесь; кнопка «Новый чат» в потоке под списком */
-}
-
+/* По умолчанию поиск чатов скрыт сверху; при скролле вверх появляется (начальный scrollTop задаётся в JS) */
 .chats-search,
 .contacts-search {
     padding: 0.5rem 1rem;
@@ -178,12 +211,41 @@
     font-size: 0.9rem;
 }
 
+/* Плашка «Контакты без переписки» в объединённом списке */
+.chats-list-section {
+    margin-top: 0.5rem;
+}
+
+.chats-list-section-header {
+    padding: 0.1rem 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #fff;
+    background: #bbb;
+    border-radius: 1em;
+    margin: 0.2em auto;
+    width: fit-content;
+}
+
+.chats-list-section.contacts-without-chat.is-hidden {
+    display: none;
+}
+
+.chat-item-row.is-hidden {
+    display: none;
+}
+
+.chat-item-contact-status {
+    font-size: 0.8rem;
+    color: var(--text-light);
+}
+
 /* Обёртка строки чата для свайпа (красный блок с корзинкой) */
 .chat-item-row {
     position: relative;
     overflow: hidden;
     border-bottom: 1px solid var(--border-color);
-    touch-action: pan-y;
+    touch-action: pan-x pan-y; /* pan-y отключал горизонтальный свайп для удаления */
 }
 
 .chat-item-row .chat-item-action-delete {
@@ -271,14 +333,45 @@
 
 .chat-item-meta .chat-item-incoming-call {
     flex-shrink: 0;
-    font-size: 0.9rem;
+    font-size: 1.1rem;
     display: inline-block;
     animation: chat-item-incoming-call-vibrate 0.5s ease-in-out infinite;
+}
+
+.chat-item-meta .chat-item-incoming-call-icon-audio {
+    animation: chat-item-incoming-call-vibrate 0.5s ease-in-out infinite;
+}
+
+.chat-item-meta .chat-item-incoming-call-icon-video {
+    animation: chat-item-incoming-call-camera-pulse 1s ease-in-out infinite;
 }
 
 @keyframes chat-item-incoming-call-vibrate {
     0%, 100% { transform: rotate(-12deg); }
     50% { transform: rotate(12deg); }
+}
+
+@keyframes chat-item-incoming-call-camera-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.85; transform: scale(1.1); }
+}
+
+/* Плашка чата при свернутом входящем звонке — мигание серым */
+.chat-item-row-incoming-call-minimized .chat-item-swipe-content {
+    animation: chat-item-incoming-minimized-blink 1.5s ease-in-out infinite;
+}
+
+@keyframes chat-item-incoming-minimized-blink {
+    0%, 100% { background: #4e4e4e; }
+    50% { background: #727272; }
+}
+
+.chat-item-row-incoming-call-minimized {
+    color: #fff;
+}
+
+.chat-item-row-incoming-call-minimized .chat-item-last-message {
+    display: none;
 }
 
 .chat-item-last-message {
@@ -303,7 +396,7 @@
 
 .chat-item-meta {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: flex-end;
     gap: 0.25rem;
 }
@@ -311,6 +404,16 @@
 .chat-item-time {
     font-size: 0.75rem;
     color: var(--text-light);
+}
+
+/* Обёртка счётчиков: реакции слева, непрочитанные справа */
+.chat-item-badges {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+    justify-content: flex-end;
 }
 
 .chat-item-unread {
@@ -324,10 +427,25 @@
     text-align: center;
 }
 
-/* Основная область чата */
+/* Счётчик неувиденных реакций (только на свои сообщения) — отдельно от непрочитанных */
+.chat-item-unseen-reactions {
+    background: var(--secondary-color);
+    color: var(--text-color);
+    border-radius: 10px;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    min-width: 18px;
+    text-align: center;
+}
+
+/* Основная область чата: не шире (окно минус сайдбар) */
 .chat-main {
     flex: 1;
+    min-width: 0;
     min-height: 0;
+    max-width: 100%;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     position: relative;
@@ -468,9 +586,68 @@
     min-height: 0;
     overflow-y: auto;
     padding: 1rem;
-    /* background: var(--bg-light); */
-    background: #f5f5f5;
+    /* Градиент 135vh + повторяющийся бледный паттерн поверх */
+    background-image:
+        radial-gradient(circle at center, rgba(255, 255, 255, 0.4) 1px, transparent 1px),
+        linear-gradient(180deg, #e3f2fd 0%, #f3e5f5 50%, #e3f2fd 100%);
+    background-attachment: local;
+    background-size: 24px 24px, 100% 135vh;
+    overflow-x: hidden;
 }
+
+.chat-scroll-to-bottom {
+    position: absolute;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 15;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    border: none;
+    background: var(--primary, #2563eb);
+    color: #fff;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+}
+.chat-scroll-to-bottom:hover {
+    opacity: 0.95;
+    transform: scale(1.05);
+}
+.chat-scroll-to-bottom:focus {
+    outline: 2px solid var(--primary, #2563eb);
+    outline-offset: 2px;
+}
+.chat-scroll-to-bottom-icon {
+    display: block;
+    flex-shrink: 0;
+}
+
+.chat-scroll-to-bottom-unread {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.25rem;
+    border-radius: 10px;
+    background: var(--danger, #dc3545);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.1rem;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.chat-scroll-to-bottom-unread.is-hidden {
+    display: none;
+}
+
 .chat-messages.forward-selection-mode .message {
     padding-right: 4em;
 }
@@ -494,6 +671,8 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .message.own {
@@ -674,13 +853,13 @@
 }
 
 .message.own .message-bubble {
-    background: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 90%, transparent);
     color: white;
     border-bottom-right-radius: 4px;
 }
 
 .message.other .message-bubble {
-    background: var(--bg-color);
+    background: color-mix(in srgb, var(--bg-color) 90%, transparent);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     border-top-left-radius: 4px;
@@ -863,10 +1042,6 @@
     flex-shrink: 0;
 }
 
-.message-status-sent {
-    /* color: rgba(255, 255, 255, 0.7); */
-}
-
 .message-status-delivered {
     color: rgba(255, 255, 255, 0.85);
 }
@@ -893,6 +1068,15 @@
 .message-content s,
 .message-content strike,
 .message-content del { text-decoration: line-through; }
+
+/* Twemoji: единый вид эмодзи (в т.ч. флагов) через картинки */
+.message-content .twemoji,
+.message-reaction .twemoji {
+    height: 1.2em;
+    width: auto;
+    vertical-align: -0.2em;
+    max-height: 1.5em;
+}
 
 /* Блок «Ответ на» внутри пузырька */
 .message-reply {
@@ -1030,6 +1214,7 @@
     font-weight: 600;
     line-height: 1.3;
     display: -webkit-box;
+    line-clamp: 2;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
@@ -1040,6 +1225,7 @@
     color: var(--text-light);
     line-height: 1.35;
     display: -webkit-box;
+    line-clamp: 2;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
@@ -1149,7 +1335,7 @@
     border-radius: 50%;
     overflow: hidden;
     vertical-align: middle;
-    cursor: pointer;
+    cursor: default;
     flex-shrink: 0;
     background: var(--bg-color, #eee);
 }
@@ -1166,10 +1352,6 @@
 }
 .message-reaction-avatar:hover {
     opacity: 0.9;
-}
-.message-reaction-avatar:focus {
-    outline: 1px solid var(--primary-color, #007bff);
-    outline-offset: 1px;
 }
 
 /* Бабл стикера — прозрачный фон */
@@ -1196,6 +1378,65 @@
     border-radius: 8px;
 }
 
+/* Поворот стикера влево-вправо при отправке и при появлении нового сообщения со стикером */
+@keyframes message-sticker-emoji-wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-15deg); }
+    75% { transform: rotate(15deg); }
+}
+
+.message-bubble.message-sticker-shake .message-sticker-emoji,
+.message-bubble.message-sticker-shake .message-sticker-img {
+    /* Очень быстрый старт, к концу цикла — медленнее */
+    animation: message-sticker-emoji-wiggle 0.4s cubic-bezier(0.05, 0.7, 0.4, 0.95) 4;
+}
+
+/* Контейнер разлёта эмодзи (7 копий в стороны, вверх, с уменьшением) — только для эмодзи-стикеров */
+.message-sticker-burst {
+    position: absolute;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 2;
+    perspective: 800px;
+    transform-style: preserve-3d;
+}
+
+.message-sticker-burst-emoji {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    font-size: 5rem;
+    line-height: 1.5;
+    opacity: 1;
+    transform-style: preserve-3d;
+    animation: message-sticker-burst 1.4s linear forwards;
+}
+
+.message-sticker-burst-emoji.twemoji {
+    font-size: inherit;
+}
+
+.message-sticker-burst .message-sticker-burst-emoji img.twemoji {
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.1em;
+}
+
+@keyframes message-sticker-burst {
+    0% {
+        transform: translate(-50%, -50%) translate(0, 0) scale(var(--burst-scale, 1)) rotateX(0) rotateY(0) rotateZ(0deg) rotate(var(--burst-rotate));
+        opacity: 1;
+    }
+    40% {
+        transform: translate(-50%, -50%) translate(var(--burst-tx), var(--burst-ty)) scale(calc(0.85 * var(--burst-scale, 1))) rotateX(calc(var(--burst-x-sign, 1) * 144deg)) rotateY(calc(var(--burst-y-sign, 1) * 144deg)) rotateZ(var(--burst-spin-40, 288deg)) rotate(var(--burst-rotate));
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, -50%) translate(var(--burst-tx), calc(var(--burst-ty) - 100px)) scale(0) rotateX(calc(var(--burst-x-sign, 1) * 360deg)) rotateY(calc(var(--burst-y-sign, 1) * 360deg)) rotateZ(var(--burst-spin, 720deg)) rotate(var(--burst-rotate));
+        opacity: 0;
+    }
+}
+
 /* Контент сообщения со стикером GIF — не шире 70% от чата; само сообщение обычной ширины */
 .message-bubble:has(.message-sticker-gif) .message-content {
     padding-right: 2em;
@@ -1214,8 +1455,10 @@
     bottom: 4.5em;
     left: 0;
     right: 0;
-    max-height: 200px;
-    overflow-y: auto;
+    max-height: 240px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     background: var(--bg-color);
     border: 1px solid var(--border-color);
     border-radius: 12px;
@@ -1225,15 +1468,69 @@
     z-index: 1100;
 }
 
+.emoji-panel-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.emoji-panel-search {
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: var(--bg-color);
+    color: var(--text-color);
+}
+
+.emoji-panel-search::placeholder {
+    color: var(--muted-color, #888);
+}
+
+.emoji-panel-sort-btn {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.emoji-panel-sort-btn:hover {
+    background: var(--secondary-color);
+}
+
+.emoji-panel-sort-btn[aria-pressed="true"] {
+    background: var(--secondary-color);
+    border-color: var(--primary-color, #0d6efd);
+}
+
 .emoji-panel-grid {
-    display: grid;
-    grid-template-columns: repeat(10, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.25rem;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 .emoji-panel-btn {
-    width: 100%;
-    aspect-ratio: 1;
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
     border: none;
     background: none;
     font-size: 1.5rem;
@@ -1246,12 +1543,18 @@
     background: var(--secondary-color);
 }
 
+.emoji-panel-btn .twemoji {
+    height: 1.25em;
+    width: auto;
+    vertical-align: -0.15em;
+}
+
 /* Панель стикеров */
 .chat-input-wrapper {
     position: relative;
 }
 
-/* Панель стикеров — поверх всего контента */
+/* Панель стикеров — поверх всего контента: сверху категории, по центру сетка, внизу фильтр */
 .sticker-panel {
     position: absolute;
     bottom: 4.5em;
@@ -1266,6 +1569,7 @@
     margin-bottom: 0.5rem;
     box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
     z-index: 1100;
+    max-height: 80vh;
 }
 
 .sticker-panel-categories {
@@ -1273,53 +1577,106 @@
     gap: 0.25rem;
     padding: 0.5rem;
     border-top: 1px solid var(--border-color);
-    flex-wrap: wrap;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.sticker-panel-categories::-webkit-scrollbar {
+    height: 4px;
+}
+
+.sticker-panel-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    padding: 0.5rem;
+    border-top: 1px solid var(--border-color);
 }
 
 .sticker-category-btn {
+    flex: 0 0 auto;
     padding: 0.35rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 16px;
     background: var(--bg-light);
     font-size: 0.85rem;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 .sticker-category-btn:hover {
     background: var(--secondary-color);
 }
 
+.sticker-category-btn.active {
+    background: var(--primary-color);
+    color: var(--bg-color);
+    border-color: var(--primary-color);
+}
+
 .sticker-panel-grid {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 0.5rem;
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
+}
+
+.sticker-panel-category-group {
+    margin-bottom: 1rem;
+}
+
+.sticker-panel-category-group:last-child {
+    margin-bottom: 0;
+}
+
+.sticker-panel-group-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 0.35rem;
+    padding: 0 0.25rem;
+}
+
+.sticker-panel-group-items {
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
 }
 
 .sticker-panel-item {
-    width: 100%;
-    aspect-ratio: 1;
+    flex: 0 0 auto;
+    width: 4rem;
+    height: 4rem;
     border: none;
-    background: var(--bg-light);
+    background: transparent;
     border-radius: 8px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2rem;
+    font-size: 5rem;
     padding: 0;
 }
 
 .sticker-panel-item:hover {
-    background: var(--secondary-color);
+    transform: scale(1.1);
 }
 
 .sticker-panel-item .sticker-img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+}
+
+.sticker-panel-item .sticker-emoji .twemoji,
+.sticker-panel-item .twemoji {
+    height: 2.5rem;
+    width: auto;
+    vertical-align: middle;
 }
 
 .sticker-panel-item .sticker-video {
@@ -1507,10 +1864,17 @@
     background: var(--secondary-color);
 }
 
+.reaction-picker-btn .twemoji {
+    height: 1.25em;
+    width: auto;
+    vertical-align: -0.15em;
+}
+
 /* Блок ввода сообщения внизу chat-window, не выходит за его пределы */
 .chat-input-container {
     flex-shrink: 0;
     min-width: 0;
+    max-width: 100%;
     padding: 0.5rem;
     border-top: 1px solid var(--border-color);
     background: var(--bg-color);
@@ -1558,8 +1922,7 @@
 
 .chat-input-form {
     display: flex;
-    align-items: flex-end;
-    gap: 0.5rem;
+    align-items: stretch;
 }
 
 .chat-input-deleted-message {
@@ -1570,22 +1933,26 @@
 }
 
 .chat-input-actions {
-    display: flex;
-    gap: 0.5rem;
     position: relative;
+    left: 4px;
+    align-self: flex-end;
+    min-height: 44px;
+    z-index: 2;
 }
 
-/* Кнопка-триггер «меню действий» — только на мобильных */
+/* Кнопка-триггер «меню действий» (три точки): файл, смайлик, стикер — прижата к низу панели ввода */
 .chat-input-actions-trigger {
-    display: none;
-    width: 36px;
-    height: 36px;
+    display: block;
+    position: absolute;
+    bottom: 4px;
+    width: 40px;
+    height: 40px;
     border: none;
     background: none;
-    font-size: 1.5rem;
+    font-size: 2rem;
     line-height: 1;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 22px;
     transition: background-color 0.2s;
     color: inherit;
 }
@@ -1594,23 +1961,58 @@
     background: var(--secondary-color);
 }
 
+/* Выпадающие кнопки по нажатию на три точки: вертикально, с подписями */
 .chat-input-actions-buttons {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 0.35rem;
+    padding: 0.35rem;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    gap: 0.15rem;
+    z-index: 20;
+}
+
+.chat-input-actions.open .chat-input-actions-buttons {
     display: flex;
-    gap: 0.5rem;
+}
+
+.chat-input-actions.open .chat-input-actions-trigger {
+    background: var(--secondary-color);
 }
 
 .btn-attach,
 .btn-emoji,
 .btn-sticker {
-    width: 36px;
-    height: 36px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-width: 140px;
+    padding: 0.4rem 0.6rem;
     border: none;
     background: none;
-    font-size: 1.25rem;
+    font-size: 1rem;
+    font-family: inherit;
+    color: var(--text-color);
+    text-align: left;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
     transition: background-color 0.2s;
-    margin-bottom: 0.2em;
+}
+
+.chat-input-actions-btn-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.chat-input-actions-btn-label {
+    white-space: nowrap;
 }
 
 .btn-attach:hover,
@@ -1621,26 +2023,44 @@
 
 .chat-input-wrapper {
     flex: 1;
+    min-width: 0;
     margin-bottom: -0.2rem;
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    background: var(--bg-color);
+}
+
+.chat-input-wrapper:focus-within {
+    border-color: var(--primary-color);
+    outline: none;
 }
 
 #messageInput.chat-input-contenteditable,
 .chat-input-contenteditable#messageInput {
+    flex: 1;
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
+    max-width: 100%;
+    padding: 0.75rem 52px 0.75rem 52px;
+    border: none;
+    border-radius: 24px;
+    background: transparent;
     font-size: 1rem;
     font-family: inherit;
     max-height: 120px;
     min-height: 40px;
     overflow-y: auto;
+    overflow-x: hidden;
     word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    box-sizing: border-box;
 }
 
 .chat-input-contenteditable:focus {
     outline: none;
-    border-color: var(--primary-color);
 }
 
 .chat-input-contenteditable.empty::before {
@@ -1653,7 +2073,52 @@
     content: none;
 }
 
+/* Мобильный textarea — по умолчанию скрыт; на узком экране показывается вместо contenteditable для вызова клавиатуры */
+.chat-input-mobile-only {
+    display: none;
+}
+
+.chat-input-mobile-label {
+    /* Обёртка-метка: тап по области фокусирует textarea и открывает клавиатуру на iOS/Android */
+    cursor: text;
+    -webkit-user-select: text;
+    user-select: text;
+    touch-action: manipulation;
+}
+
+.chat-input-mobile-textarea {
+    width: 100%;
+    max-width: 100%;
+    padding: 0.75rem 52px 0.75rem 52px;
+    border: none;
+    border-radius: 24px;
+    background: transparent;
+    font-size: 1rem;
+    font-family: inherit;
+    max-height: 120px;
+    min-height: 40px;
+    overflow-y: auto;
+    resize: none;
+    box-sizing: border-box;
+    -webkit-user-select: text;
+    user-select: text;
+    touch-action: manipulation;
+}
+
+.chat-input-mobile-textarea:focus {
+    outline: none;
+}
+
+.chat-input-mobile-textarea::placeholder {
+    color: var(--text-light, #999);
+}
+
 .btn-send {
+    position: absolute;
+    right: 4px;
+    bottom: -15px;
+    transform: translateY(-50%);
+    z-index: 2;
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -1666,7 +2131,6 @@
     align-items: center;
     justify-content: center;
     transition: background-color 0.2s;
-    margin-bottom: 0.1em;
 }
 
 .btn-send:hover {
@@ -1747,6 +2211,11 @@
 
 .new-chat-user-item:hover {
     background: var(--secondary-color);
+}
+
+/* Модалка удаления чата: три кнопки */
+.modal-actions-delete-chat {
+    flex-wrap: wrap;
 }
 
 /* Модалка выбора чата для пересылки */
@@ -1847,6 +2316,18 @@
 }
 .btn-link-e2ee:hover {
     color: var(--primary-color);
+}
+
+.profile-e2ee-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+}
+.profile-e2ee-links-mt {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color, #e0e0e0);
+    margin-bottom: 1rem;
 }
 
 .forward-to-avatar {
@@ -2151,6 +2632,20 @@
     margin: 0.75rem 0;
     padding: 0.5rem 0;
 }
+
+.user-profile-conversation-actions {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color, #e0e0e0);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.user-profile-conversation-actions .user-profile-action-btn {
+    flex: 1;
+    min-width: 0;
+}
+
 /* Экран разблокировки (WebAuthn / PIN) — п. 5.3 */
 .e2ee-unlock-overlay {
     position: fixed;
@@ -2204,6 +2699,15 @@
     border-radius: 8px;
     font-size: 1rem;
 }
+/* Тумблер «Хранить ключи» — по образу тумблера уведомлений (profile-toggle-slider в main.css) */
+.profile-persist-keys-hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+.profile-persist-keys-mb {
+    margin-bottom: 1rem;
+}
 .user-profile-device-lock {
     margin-top: 1rem;
     padding-top: 1rem;
@@ -2237,9 +2741,31 @@
     padding: 0.5rem 0;
     font-size: 0.9375rem;
     border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
 }
 .call-participant-item:last-child {
     border-bottom: none;
+}
+.call-participant-avatar {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--secondary-color);
+    color: var(--text-color);
+    font-size: 1rem;
+    font-weight: 500;
+}
+.call-participant-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 .call-participant-name {
     font-weight: 500;
@@ -2534,17 +3060,19 @@
     .chats-sidebar {
         width: 100%;
         height: 40%;
+        min-width: unset;
+        max-width: none;
+        resize: none;
         border-right: none;
         border-bottom: 1px solid var(--border-color);
         min-height: 0;
         overflow: hidden;
     }
     
-    /* Кнопка «Новый чат» в потоке сайдбара (скролл только в .chats-panel-scroll) */
+    /* Кнопка «Новый чат» — FAB остаётся в правом нижнем углу с отступом от safe-area */
     .btn-new-chat {
-        width: 100%;
-        padding-bottom: max(1rem, env(safe-area-inset-bottom, 0));
-        flex-shrink: 0;
+        right: 1rem;
+        bottom: max(1rem, env(safe-area-inset-bottom, 0));
     }
     
     /* Когда сайдбар один (беседа не выбрана) — растягиваем на всю высоту */
@@ -2559,7 +3087,15 @@
         min-height: 0;
         overflow: hidden;
     }
+
+    .btn-send {
+        bottom: -17px;
+    }
     
+    .chat-input-actions-trigger {
+        bottom: 3px;
+    }
+
     .message-bubble {
         max-width: 85%;
         padding-right: 0.7em;
@@ -2621,35 +3157,29 @@
         max-width: calc(100vw - 2rem);
     }
 
-    /* Блок действий ввода: одна кнопка-триггер, по нажатию — выпадающие кнопки */
-    .chat-input-actions-trigger {
+    /* На мобильных используем textarea вместо contenteditable, чтобы открывалась клавиатура */
+    .chat-input-contenteditable-desktop {
+        display: none !important;
+    }
+    .chat-input-mobile-only {
         display: flex;
-        align-items: center;
-        justify-content: center;
+        flex: 1;
+        width: 100%;
+        min-width: 0;
+        min-height: 40px;
+        align-items: stretch;
+    }
+    .chat-input-mobile-only .chat-input-mobile-textarea {
+        flex: 1;
+        min-height: 40px;
     }
 
-    .chat-input-actions-buttons {
-        display: none;
-        position: absolute;
-        bottom: 100%;
-        left: 0;
-        margin-bottom: 0.35rem;
-        padding: 0.35rem;
-        background: var(--bg-color);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        gap: 0.25rem;
-        z-index: 20;
+    /* Зона ввода: touch-action без задержки тапа; у контейнера не ставить user-select: none — это может мешать клавиатуре на iOS */
+    body.mobile-chat-open .chat-input-container,
+    body.mobile-chat-open .chat-input-wrapper {
+        touch-action: manipulation;
     }
 
-    .chat-input-actions.open .chat-input-actions-buttons {
-        display: flex;
-    }
-
-    .chat-input-actions.open .chat-input-actions-trigger {
-        background: var(--secondary-color);
-    }
 }
 
 /* Превью изображения на весь экран */
@@ -2780,6 +3310,142 @@
     outline-offset: 2px;
 }
 
+.chat-header-settings {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.15s;
+}
+.chat-header-settings:hover {
+    background: var(--border-color);
+}
+.chat-header-settings:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+.chat-header-settings svg {
+    width: 22px;
+    height: 22px;
+}
+
+.chat-header-search-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.chat-header-search-btn:hover {
+    background: var(--border-color);
+}
+.chat-header-search-btn:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+.chat-header-search-btn svg {
+    width: 20px;
+    height: 20px;
+}
+.chat-window:not(.is-hidden) .chat-header-search-btn {
+    display: flex;
+}
+
+/* Панель поиска в переписке (под шапкой чата) */
+.chat-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-color);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+.chat-search-bar.is-hidden {
+    display: none;
+}
+.chat-search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--input-bg, var(--bg-color));
+    color: var(--text-color);
+}
+.chat-search-input:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 0;
+}
+.chat-search-counter {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    white-space: nowrap;
+    min-width: 4rem;
+}
+.chat-search-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: var(--border-color);
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+}
+.chat-search-btn:hover:not(:disabled) {
+    background: var(--primary-color);
+    color: #fff;
+}
+.chat-search-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.chat-search-close {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+}
+.chat-search-close:hover {
+    background: var(--border-color);
+}
+
+/* Подсветка совпадений поиска в тексте сообщений */
+.chat-search-highlight {
+    background: rgba(255, 193, 7, 0.5);
+    border-radius: 2px;
+    padding: 0 1px;
+}
+/* Текущее выбранное сообщение при навигации по результатам */
+.message.chat-search-current .message-bubble {
+    box-shadow: 0 0 0 2px var(--primary-color, #2563eb);
+}
+
 /* Панель режима выбора сообщений для пересылки */
 .chat-forward-selection-bar {
     display: flex;
@@ -2801,6 +3467,22 @@
 .chat-forward-selection-cancel:hover {
     background: var(--secondary-color);
 }
+.chat-forward-selection-delete {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-color);
+    color: var(--danger-color, #c0392b);
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.chat-forward-selection-delete:hover {
+    background: var(--secondary-color);
+}
+.chat-forward-selection-delete:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
 .chat-forward-selection-forward {
     padding: 0.4rem 0.75rem;
     border: none;
@@ -2818,15 +3500,46 @@
     cursor: not-allowed;
 }
 
-/* Модальное окно входящего вызова */
-.modal-incoming-call .modal-content {
-    max-width: 320px;
+/* Модальное окно входящего вызова — на весь экран приложения */
+.modal-incoming-call.modal-incoming-call-fullscreen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-color);
+    z-index: 1001;
 }
+
+.modal-incoming-call.modal-incoming-call-fullscreen .modal-content.modal-incoming-call-content {
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 2rem;
+    box-shadow: none;
+}
+
+.modal-incoming-call.modal-incoming-call-fullscreen .modal-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
 .incoming-call-avatar-wrap {
     display: flex;
     justify-content: center;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
 }
+
+.modal-incoming-call-fullscreen .incoming-call-avatar-wrap {
+    margin-bottom: 2rem;
+}
+
 .incoming-call-avatar {
     width: 72px;
     height: 72px;
@@ -2836,6 +3549,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+.modal-incoming-call-fullscreen .incoming-call-avatar {
+    width: 120px;
+    height: 120px;
 }
 
 .incoming-call-avatar img {
@@ -2850,11 +3568,21 @@
     color: var(--text-light, #757575);
 }
 
+.modal-incoming-call-fullscreen .incoming-call-avatar-placeholder {
+    font-size: 3rem;
+}
+
 .incoming-call-name {
     font-weight: 600;
     margin-bottom: 0.25rem;
     text-align: center;
 }
+
+.modal-incoming-call-fullscreen .incoming-call-name {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
 .incoming-call-type {
     font-size: 0.9rem;
     color: var(--text-light);
@@ -2862,15 +3590,35 @@
     text-align: center;
 }
 
-.incoming-call-actions {
-    display: flex;
-    gap: 0.75rem;
-    justify-content: center;
+.modal-incoming-call-fullscreen .incoming-call-type {
+    font-size: 1rem;
+    margin-bottom: 2rem;
 }
 
+.incoming-call-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-incoming-call-fullscreen .incoming-call-actions {
+    gap: 1rem;
+}
+
+.btn-call-minimize,
 .btn-call-decline,
 .btn-call-accept {
     min-width: 100px;
+}
+
+.modal-incoming-call-fullscreen .btn-call-minimize,
+.modal-incoming-call-fullscreen .btn-call-decline,
+.modal-incoming-call-fullscreen .btn-call-accept {
+    min-width: 140px;
+    padding: 0.75rem 1.25rem;
+    border-radius: 30px;
 }
 
 .btn-call-accept {
@@ -2940,13 +3688,17 @@
 }
 .call-panel-audio-view {
     display: none;
+    position: absolute;
+    inset: 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     padding: 1rem;
+    z-index: 0;
 }
-.call-panel.call-panel-audio .call-panel-audio-view {
+.call-panel.call-panel-audio .call-panel-audio-view,
+.call-panel.call-panel-remote-video-off .call-panel-audio-view {
     display: flex;
 }
 .call-panel-avatar-peer-wrap {
@@ -2994,20 +3746,45 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.45; }
 }
+.call-panel-peer-status-name {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+}
 .call-panel-peer-name {
-    display: block;
-    margin-top: 0.5rem;
     font-size: 1rem;
     font-weight: 600;
     color: #fff;
-    text-align: center;
 }
 .call-panel-peer-status {
-    display: block;
-    margin-top: 0.35rem;
     font-size: 0.8125rem;
     color: rgba(255, 255, 255, 0.85);
-    text-align: center;
+}
+/* Иконка статуса микрофона собеседника (светло-серая) */
+.call-panel-peer-status .peer-mic-icon,
+.call-panel-remote-status .peer-mic-icon {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    background-color: #9ca3af;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    vertical-align: middle;
+}
+.call-panel-peer-status .peer-mic-icon.peer-mic-on,
+.call-panel-remote-status .peer-mic-icon.peer-mic-on {
+    -webkit-mask-image: url('../img/mic-on.svg');
+    mask-image: url('../img/mic-on.svg');
+}
+.call-panel-peer-status .peer-mic-icon.peer-mic-off,
+.call-panel-remote-status .peer-mic-icon.peer-mic-off {
+    -webkit-mask-image: url('../img/mic-off.svg');
+    mask-image: url('../img/mic-off.svg');
 }
 .call-panel-duration-after-status {
     display: block;
@@ -3034,6 +3811,18 @@
     height: 100%;
     object-fit: contain;
     background: #000;
+    z-index: 0;
+}
+.call-panel.call-panel-remote-video-off #callPanelRemoteVideo {
+    display: none;
+}
+.call-panel.call-panel-remote-video-off .call-panel-remote-name-wrap {
+    display: none !important;
+}
+.call-panel.call-panel-audio #callPanelRemoteVideo,
+.call-panel.call-panel-audio .call-panel-remote-name-wrap,
+.call-panel.call-panel-audio .call-panel-local-pip {
+    display: none !important;
 }
 /* Когда собеседник шарит экран — видео на всю площадь экрана с сохранением пропорций */
 .call-panel-remote-screen-share .call-panel-video-wrap {
@@ -3056,6 +3845,11 @@
     pointer-events: none;
     max-width: calc(100% - 2rem);
 }
+.call-panel-remote-status-name {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
 .call-panel-remote-name {
     font-size: 0.9rem;
     color: #fff;
@@ -3068,6 +3862,10 @@
     font-size: 0.75rem;
     color: rgba(255, 255, 255, 0.9);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.call-panel-remote-status .peer-mic-icon {
+    width: 0.9em;
+    height: 0.9em;
 }
 .call-panel-remote-duration {
     display: block;
@@ -3175,7 +3973,9 @@
     .group-call-panel .btn-call-label {
         display: inline;
         font-size: 0.8125rem;
-        white-space: pre-line;
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: break-word;
         text-align: left;
         line-height: 1.2;
         padding-right: 0.5em;
@@ -3228,15 +4028,41 @@
 .btn-call-hangup:hover {
     opacity: 0.9;
 }
-.btn-call-toggle.btn-call-off {
-    /* background: background: var(--border-color); */
-}
-/* Вкл: микрофон, камера, экран — зелёные */
-.btn-call-mute.btn-call-on,
+
+/* Вкл: микрофон (unmuted), камера, экран — зелёные. Для микрофона используем .btn-call-unmuted, чтобы не путать с "mute on". */
+.btn-call-audio.btn-call-unmuted,
 .btn-call-video.btn-call-on,
 .btn-call-screenshare.btn-call-on {
-    background: #2ea934
+    background: #2ea934;
     color: #fff;
+}
+/* Мобильный режим: явно задаём серый/зелёный статус кнопок микрофона и камеры (иначе могут перекрываться другими правилами) */
+@media (max-width: 767px) {
+    .call-panel .btn-call-audio.btn-call-unmuted,
+    .group-call-panel .btn-call-audio.btn-call-unmuted {
+        background: #2ea934;
+        color: #fff;
+    }
+    .call-panel .btn-call-audio.btn-call-muted,
+    .group-call-panel .btn-call-audio.btn-call-muted {
+        background: var(--border-color);
+        color: var(--text);
+    }
+    .call-panel .btn-call-video.btn-call-on,
+    .group-call-panel .btn-call-video.btn-call-on {
+        background: #2ea934;
+        color: #fff;
+    }
+    .call-panel .btn-call-video.btn-call-off,
+    .group-call-panel .btn-call-video.btn-call-off {
+        background: var(--border-color);
+        color: var(--text);
+    }
+    .call-panel .btn-call-screenshare.btn-call-on,
+    .group-call-panel .btn-call-screenshare.btn-call-on {
+        background: #2ea934;
+        color: #fff;
+    }
 }
 /* Запись вкл — красная */
 .btn-call-record.btn-call-on {
@@ -3371,6 +4197,11 @@
 }
 .group-call-panel.group-call-visible {
     transform: translateY(0);
+}
+/* Свёрнутая панель звонка — скрыта, медиа-потоки продолжают работать */
+.call-panel.call-panel-minimized,
+.group-call-panel.call-panel-minimized {
+    transform: translateY(100%);
 }
 .group-call-inner {
     flex: 1;
@@ -3626,6 +4457,25 @@
 .group-call-participant-item:hover {
     background: var(--hover-bg);
 }
+.group-call-participant-avatar {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--secondary-color);
+    color: var(--text-color);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+.group-call-participant-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
 .group-call-participant-name {
     flex: 1;
 }
@@ -3727,6 +4577,7 @@
     background: #2e7d32;
     color: #fff;
     border: none;
+    border-radius: 30px;
 }
 .chat-group-call-plaque-join:hover {
     background: #1b5e20;
@@ -3736,6 +4587,7 @@
     background: #c62828;
     color: #fff;
     border: none;
+    border-radius: 30px;
 }
 .chat-group-call-plaque-decline:hover {
     background: #b71c1c;
@@ -3743,6 +4595,83 @@
 }
 .chat-group-call-plaque .btn {
     flex-shrink: 0;
+}
+
+/* Плашка свёрнутого звонка — сверху, в потоке, уменьшает высоту остального контента */
+.call-minimized-bar {
+    flex-shrink: 0;
+    display: none;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: #1a1a1a;
+    border-bottom: 1px solid var(--border-color, #333);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+}
+.call-minimized-bar.call-minimized-bar-visible {
+    display: flex;
+}
+.call-minimized-bar-name {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.call-minimized-bar-duration {
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: #fff;
+    min-width: 3rem;
+}
+.call-minimized-bar-hangup {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #c62828;
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.call-minimized-bar-hangup:hover {
+    background: #b71c1c;
+}
+.call-minimized-bar-hangup:focus {
+    outline: 2px solid var(--primary, #2563eb);
+    outline-offset: 2px;
+}
+/* Кнопка свернуть — верхний правый угол интерфейса звонка */
+.call-panel-minimize-corner {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 100;
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.call-panel-minimize-corner:hover {
+    background: rgba(0, 0, 0, 0.7);
 }
 
 /* Устаревший баннер в шапке — оставлен для совместимости, скрыт при использовании плашки */

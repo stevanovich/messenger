@@ -8,6 +8,7 @@ config/database.php
 config/*.local.php
 config/reset_admin_password.php
 config/e2ee_key_backup.php
+config/e2ee_options.php
 
 # Отладочные и опасные файлы
 test/phpinfo.php
@@ -50,5 +51,6 @@ Thumbs.db
 # Node modules (если будут использоваться)
 node_modules/
 
-# Composer (не коммитить в публичный репозиторий)
+# Composer
+vendor/
 composer.phar

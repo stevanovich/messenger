@@ -3,19 +3,22 @@
 // Требуется UNIQUE(message_id, user_uuid, emoji) — без UNIQUE(message_id, user_uuid).
 session_start();
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/emojis.php';
 
 header('Content-Type: application/json; charset=utf-8');
 $method = $_SERVER['REQUEST_METHOD'];
+global $pdo;
 
-/** Список поддерживаемых эмодзи для реакций (один источник правды для API и валидации). */
-$REACTION_SUPPORTED_EMOJI_STRING = '👍❤️😂😮😢🙏😀😃😄😁😅🤣😊😇🙂😉😍🥰😘😋😛😜🤪😝🤔😐😑😏😒🙄😬😌😔😪🤤😴😷🤒🤕🤢🤮😵🤠😎😕😟😯😲😳🥺😦😧😨😥😭😱😖😞😤😡🤬💀💩👎👊✊🤛🤜👏🙌👐🤲🤝✌️🤞🤟🤘🤙🤌🤏❤️🧡💛💚💙💜🖤🤍🤎💔❣️💕💞💓💗💖💘💝💟✅❌⭕❗❕❓❔‼️⁉️';
-
-function reaction_get_supported_emojis_list() {
-    global $REACTION_SUPPORTED_EMOJI_STRING;
-    if (preg_match_all('/\X/u', $REACTION_SUPPORTED_EMOJI_STRING, $m)) {
-        return array_values(array_unique($m[0]));
-    }
-    return ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+/** Список поддерживаемых эмодзи для реакций (из единого источника: supported_emojis / config). Скрытые категории исключаются. */
+$REACTION_SUPPORTED_EMOJIS = get_supported_emojis_list($pdo);
+$hiddenCategories = get_hidden_reaction_category_names($pdo);
+if (!empty($hiddenCategories)) {
+    $withMeta = get_supported_emojis_with_meta($pdo);
+    $hiddenSet = array_flip($hiddenCategories);
+    $REACTION_SUPPORTED_EMOJIS = array_values(array_filter($withMeta, function ($r) use ($hiddenSet) {
+        return !isset($hiddenSet[$r['category'] ?? '']);
+    }));
+    $REACTION_SUPPORTED_EMOJIS = array_column($REACTION_SUPPORTED_EMOJIS, 'emoji');
 }
 
 /** Нормализация эмодзи для сравнения (NFC + убираем только variation selector U+FE0F, чтобы ❤ и ❤️ совпадали). */
@@ -27,8 +30,6 @@ function reaction_normalize_emoji($emoji) {
     $s = preg_replace('/\x{FE0F}/u', '', $s);
     return $s === '' ? $emoji : $s;
 }
-
-$REACTION_SUPPORTED_EMOJIS = reaction_get_supported_emojis_list();
 
 // Публичный endpoint: список эмодзи для реакций (без авторизации), чтобы пикер работал до готовности сессии
 if ($method === 'GET' && !empty($_GET['list_emojis'])) {
@@ -85,15 +86,19 @@ switch ($method) {
             jsonError('Недопустимый emoji');
         }
         
-        // Проверка доступа к сообщению (участие в беседе)
+        // Проверка доступа к сообщению (участие в беседе) и что это не звонок
         $stmt = $pdo->prepare("
-            SELECT m.id FROM messages m
+            SELECT m.id, m.type FROM messages m
             JOIN conversation_participants cp ON cp.conversation_id = m.conversation_id
             WHERE m.id = ? AND m.deleted_at IS NULL AND cp.user_uuid = ?
         ");
         $stmt->execute([$messageId, $currentUserUuid]);
-        if (!$stmt->fetch()) {
+        $msgRow = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$msgRow) {
             jsonError('Нет доступа к сообщению', 403);
+        }
+        if (($msgRow['type'] ?? '') === 'call') {
+            jsonError('Реакции на звонки запрещены', 400);
         }
         
         try {
@@ -333,13 +338,17 @@ switch ($method) {
                 jsonError('Не указаны message_id или emoji');
             }
             $stmt = $pdo->prepare("
-                SELECT m.id FROM messages m
+                SELECT m.id, m.type FROM messages m
                 JOIN conversation_participants cp ON cp.conversation_id = m.conversation_id
                 WHERE m.id = ? AND m.deleted_at IS NULL AND cp.user_uuid = ?
             ");
             $stmt->execute([$messageId, $currentUserUuid]);
-            if (!$stmt->fetch()) {
+            $msgRow = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$msgRow) {
                 jsonError('Нет доступа к сообщению', 403);
+            }
+            if (($msgRow['type'] ?? '') === 'call') {
+                jsonError('Реакции на звонки запрещены', 400);
             }
             try {
                 $stmt = $pdo->prepare("

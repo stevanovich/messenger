@@ -83,13 +83,6 @@
                     }
                 });
             });
-            div.querySelectorAll('.message-reaction-avatar[data-user-uuid]').forEach(function(avatarEl) {
-                avatarEl.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    var u = avatarEl.dataset.userUuid;
-                    if (u && typeof openUserProfileModal === 'function') openUserProfileModal(u);
-                });
-            });
         }
     }
 
@@ -116,14 +109,33 @@
                             }
                             const messageEl = window.chatModule.createMessageElement(msg, currentUserUuid);
                             chatMessages.appendChild(messageEl);
+                            if (msg.type === 'sticker' && typeof window.chatModule.triggerStickerShakeForMessage === 'function') {
+                                window.chatModule.triggerStickerShakeForMessage(msg.id);
+                            }
                             if (msg.user_uuid !== currentUserUuid && window.chatModule.markDelivered) {
                                 window.chatModule.markDelivered(conversationId, [msg.id]);
                             }
                             const isScrolledToBottom = chatMessages && chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 100;
                             if (isScrolledToBottom) {
                                 chatMessages.scrollTop = chatMessages.scrollHeight;
-                                if (msg.user_uuid !== currentUserUuid && window.chatModule.markConversationAsRead) {
-                                    window.chatModule.markConversationAsRead(conversationId);
+                            }
+                            if (window.chatModule.setupUnreadObserver) {
+                                window.chatModule.setupUnreadObserver(chatMessages);
+                            }
+                            if (msg.user_uuid !== currentUserUuid) {
+                                const convs = window.chatModule.conversations ? window.chatModule.conversations() : [];
+                                const conv = convs.find(c => c.id === conversationId);
+                                if (conv) {
+                                    conv.unread_count = (conv.unread_count | 0) + 1;
+                                    if (window.chatModule.updateScrollToBottomUnreadBadge) {
+                                        window.chatModule.updateScrollToBottomUnreadBadge();
+                                    }
+                                    if (window.chatModule.renderConversations) {
+                                        window.chatModule.renderConversations();
+                                    }
+                                }
+                                if (window.chatModule.updateScrollToBottomButtonVisibility) {
+                                    window.chatModule.updateScrollToBottomButtonVisibility();
                                 }
                             }
                         })();
@@ -141,6 +153,9 @@
             const messageId = data.message_id;
             const reactions = data.reactions || [];
             if (messageId) applyReactionUpdate(parseInt(messageId, 10), reactions);
+            if (window.chatModule && typeof window.chatModule.loadConversations === 'function') {
+                window.chatModule.loadConversations();
+            }
             return;
         }
 

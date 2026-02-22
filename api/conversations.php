@@ -96,7 +96,14 @@ switch ($method) {
                        SELECT 1 FROM message_reads mr 
                        WHERE mr.message_id = m.id AND mr.user_uuid = ?
                    )) as unread_count,
+                (SELECT COUNT(*)
+                 FROM message_reactions mr
+                 INNER JOIN messages m ON m.id = mr.message_id AND m.conversation_id = c.id AND m.user_uuid = ? AND m.deleted_at IS NULL
+                 WHERE mr.user_uuid != ?
+                   AND (cp.last_reactions_seen_at IS NULL OR mr.created_at > cp.last_reactions_seen_at)
+                ) as unseen_reactions_count,
                 COALESCE(cp.notifications_enabled, 1) as notifications_enabled,
+                cp.role as my_role,
                 COALESCE(
                     (SELECT 1 FROM group_calls gc WHERE gc.conversation_id = c.id AND gc.ended_at IS NULL LIMIT 1),
                     (SELECT 1 FROM call_logs cl WHERE cl.conversation_id = c.id AND cl.ended_at IS NULL AND (cl.caller_uuid = ? OR cl.callee_uuid = ?) LIMIT 1),
@@ -108,7 +115,7 @@ switch ($method) {
             WHERE cp.user_uuid = ?
             ORDER BY has_active_call DESC, last_message_time DESC, c.created_at DESC
         ");
-        $stmt->execute([$currentUserUuid, $currentUserUuid, $currentUserUuid, $currentUserUuid, $currentUserUuid, $currentUserUuid]);
+        $stmt->execute([$currentUserUuid, $currentUserUuid, $currentUserUuid, $currentUserUuid, $currentUserUuid, $currentUserUuid, $currentUserUuid, $currentUserUuid]);
         $conversations = $stmt->fetchAll();
         
         // Получение информации об участниках для приватных чатов
@@ -199,11 +206,12 @@ switch ($method) {
                 jsonError('Пользователь не найден');
             }
             
-            // Проверка существования приватного чата (без учёта hidden_at — беседа одна на пару)
+            // Проверка существования приватного чата, который пользователь не скрывал.
+            // Если пользователь ранее удалил (скрыл) беседу — не возвращаем её, создаём новую.
             $stmt = $pdo->prepare("
                 SELECT c.id
                 FROM conversations c
-                INNER JOIN conversation_participants cp1 ON c.id = cp1.conversation_id AND cp1.user_uuid = ?
+                INNER JOIN conversation_participants cp1 ON c.id = cp1.conversation_id AND cp1.user_uuid = ? AND cp1.hidden_at IS NULL
                 INNER JOIN conversation_participants cp2 ON c.id = cp2.conversation_id AND cp2.user_uuid = ?
                 WHERE c.type = 'private'
             ");
@@ -211,9 +219,6 @@ switch ($method) {
             $existing = $stmt->fetch();
             
             if ($existing) {
-                // Вернуть беседу в список у текущего пользователя (если скрывал)
-                $pdo->prepare("UPDATE conversation_participants SET hidden_at = NULL WHERE conversation_id = ? AND user_uuid = ?")
-                    ->execute([$existing['id'], $currentUserUuid]);
                 jsonSuccess(['conversation_id' => $existing['id']], 'Беседа уже существует');
             }
         } elseif ($type === 'group') {
@@ -354,17 +359,31 @@ switch ($method) {
             break;
         }
 
-        // Скрытие беседы для текущего пользователя (исходное поведение)
+        // Удалить для всех (for_everyone=1) или только скрыть для себя
+        $forEveryone = !empty($_GET['for_everyone']);
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare("
-                UPDATE conversation_participants
-                SET hidden_at = NOW()
-                WHERE conversation_id = ? AND user_uuid = ?
-            ");
-            $stmt->execute([$conversationId, $currentUserUuid]);
+            if ($forEveryone) {
+                // Приватный чат: скрыть для всех участников. Группа: только админ может удалить группу для всех.
+                if ($myParticipation['type'] === 'group' || $myParticipation['type'] === 'external') {
+                    if ($myParticipation['role'] !== 'admin') {
+                        $pdo->rollBack();
+                        jsonError('Только администратор может удалить группу для всех', 403);
+                    }
+                }
+                $pdo->prepare("
+                    UPDATE conversation_participants SET hidden_at = NOW()
+                    WHERE conversation_id = ?
+                ")->execute([$conversationId]);
+            } else {
+                $pdo->prepare("
+                    UPDATE conversation_participants
+                    SET hidden_at = NOW()
+                    WHERE conversation_id = ? AND user_uuid = ?
+                ")->execute([$conversationId, $currentUserUuid]);
+            }
 
-            // Forward secrecy (E2EE этап 5): при уходе из группы инвалидируем ключ группы
+            // Forward secrecy (E2EE этап 5): при уходе инвалидируем ключ группы
             try {
                 $pdo->prepare("DELETE FROM conversation_member_keys WHERE conversation_id = ?")->execute([$conversationId]);
             } catch (PDOException $e) {
@@ -382,7 +401,7 @@ switch ($method) {
             }
 
             $pdo->commit();
-            jsonSuccess(null, 'Беседа удалена');
+            jsonSuccess(null, $forEveryone ? 'Беседа удалена для всех' : 'Беседа удалена');
         } catch (Exception $e) {
             $pdo->rollBack();
             jsonError('Ошибка при удалении беседы');

@@ -128,6 +128,15 @@ switch ($method) {
             $params[] = $status === '' ? null : $status;
         }
 
+        // Язык интерфейса (только свой профиль)
+        if (!$isAdminEdit && array_key_exists('locale', $data)) {
+            $locale = trim((string) ($data['locale'] ?? ''));
+            if ($locale === '' || in_array($locale, ['ru', 'en', 'sr'], true)) {
+                $updates[] = 'locale = ?';
+                $params[] = $locale === '' ? null : $locale;
+            }
+        }
+
         // Видимость в общем списке контактов (свой профиль или админ — чужой)
         if (array_key_exists('visible_in_contacts', $data)) {
             $visible = (bool) $data['visible_in_contacts'];
@@ -166,7 +175,11 @@ switch ($method) {
                 $_SESSION['username'] = $newUsername;
             }
             $msg = !empty($updates) ? ($isAdminEdit ? 'Настройка обновлена' : 'Профиль обновлён') : '';
-            jsonSuccess(['username' => $newUsername ?: null, 'avatar' => $data['avatar'] ?? null, 'display_name' => $data['display_name'] ?? null, 'status' => $data['status'] ?? null, 'visible_in_contacts' => array_key_exists('visible_in_contacts', $data) ? (bool)$data['visible_in_contacts'] : null], $msg);
+            $resData = ['username' => $newUsername ?: null, 'avatar' => $data['avatar'] ?? null, 'display_name' => $data['display_name'] ?? null, 'status' => $data['status'] ?? null, 'visible_in_contacts' => array_key_exists('visible_in_contacts', $data) ? (bool)$data['visible_in_contacts'] : null];
+            if (array_key_exists('locale', $data)) {
+                $resData['locale'] = trim((string)$data['locale']) ?: null;
+            }
+            jsonSuccess($resData, $msg);
         } else {
             jsonError('Ошибка при обновлении');
         }

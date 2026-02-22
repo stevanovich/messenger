@@ -7,37 +7,39 @@ let touchStartX = 0, touchStartY = 0;
 document.addEventListener('DOMContentLoaded', () => {
     setupLongPress();
     setupDeleteChatModal();
-    setupSwipeOnChatItems();
     setupSwipeOnMessages();
 });
+window.initChatSwipe = setupSwipeOnChatItems;
 
-/** Модальное окно подтверждения удаления чата (вместо нативного confirm) */
+/** Модальное окно подтверждения удаления чата: скрыть для себя или удалить для всех */
 function setupDeleteChatModal() {
     const modal = document.getElementById('modalDeleteChat');
     const btnCancel = document.getElementById('modalDeleteChatCancel');
-    const btnConfirm = document.getElementById('modalDeleteChatConfirm');
+    const btnHide = document.getElementById('modalDeleteChatHide');
+    const btnForAll = document.getElementById('modalDeleteChatForAll');
     const btnClose = document.getElementById('modalDeleteChatClose');
-    if (!modal || !btnCancel || !btnConfirm) return;
+    if (!modal || !btnCancel || !btnHide || !btnForAll) return;
 
     let pendingConvId = null;
     let pendingRow = null;
 
     function closeModal() {
-        modal.style.display = 'none';
+        modal.classList.add('is-hidden');
         if (pendingRow) delete pendingRow.dataset.swipeTriggered;
         pendingConvId = null;
         pendingRow = null;
     }
 
-    function onConfirm() {
+    function runDelete(forEveryone) {
         const convId = pendingConvId;
         if (convId != null && window.chatModule && typeof window.chatModule.deleteConversation === 'function') {
-            window.chatModule.deleteConversation(convId);
+            window.chatModule.deleteConversation(convId, forEveryone);
         }
         closeModal();
     }
 
-    btnConfirm.addEventListener('click', onConfirm);
+    btnHide.addEventListener('click', () => runDelete(false));
+    btnForAll.addEventListener('click', () => runDelete(true));
     btnCancel.addEventListener('click', closeModal);
     btnClose.addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
@@ -45,15 +47,25 @@ function setupDeleteChatModal() {
     window.showDeleteChatConfirm = function (convId, row) {
         pendingConvId = convId;
         pendingRow = row;
-        modal.style.display = 'flex';
+        const conv = window.chatModule && typeof window.chatModule.conversations === 'function'
+            ? window.chatModule.conversations().find(c => c.id == convId)
+            : null;
+        const isGroupOrExternal = conv && (conv.type === 'group' || conv.type === 'external');
+        const canDeleteForAll = !isGroupOrExternal || (conv && conv.my_role === 'admin');
+        btnForAll.style.display = canDeleteForAll ? '' : 'none';
+        modal.classList.remove('is-hidden');
     };
 }
+
+const LONG_PRESS_MOVE_THRESHOLD = 10; // пикселей: движение больше — считаем жестом выделения, long-press отменяем
 
 function setupLongPress() {
     document.addEventListener('touchstart', (e) => {
         const target = e.target.closest('.message-bubble');
         if (!target) return;
-            longPressTimer = setTimeout(() => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        longPressTimer = setTimeout(() => {
             longPressTimer = null;
             const messageEl = target.closest('.message');
             const messageId = messageEl && messageEl.dataset.messageId;
@@ -67,6 +79,16 @@ function setupLongPress() {
                 }
             }
         }, LONG_PRESS_MS);
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+        if (!longPressTimer || !e.touches.length) return;
+        const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
+        if (Math.abs(dx) > LONG_PRESS_MOVE_THRESHOLD || Math.abs(dy) > LONG_PRESS_MOVE_THRESHOLD) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
     }, { passive: true });
 
     document.addEventListener('touchend', () => {
@@ -84,19 +106,24 @@ function setupLongPress() {
 }
 
 function setupSwipeOnChatItems() {
-    let startX = 0, currentX = 0;
+    const chatsList = document.getElementById('chatsList');
+    if (!chatsList || chatsList._swipeInited) return;
+    chatsList._swipeInited = true;
+
+    let startX = 0, startY = 0, currentX = 0, currentY = 0;
     let activeRow = null;
     let activeContent = null;
     const SWIPE_THRESHOLD = 60;
+    const HORIZONTAL_LOCK_THRESHOLD = 15;
 
     function getActionWidth(row) {
         const action = row ? row.querySelector('.chat-item-action-delete') : null;
         return action ? action.offsetWidth : 256;
     }
 
-    function getClientX(e) {
-        if (e.touches && e.touches.length > 0) return e.touches[0].clientX;
-        return e.clientX;
+    function getClientXY(e) {
+        if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        return { x: e.clientX, y: e.clientY };
     }
 
     function getRowAndContent(target) {
@@ -117,19 +144,27 @@ function setupSwipeOnChatItems() {
     }
 
     function handleStart(e) {
+        if (!chatsList.contains(e.target)) return;
         const { row, content } = getRowAndContent(e.target);
         if (!row || !content) return;
+        if (row.dataset.userUuid) return; // свайп только для бесед, не для контактов без переписки
         activeRow = row;
         activeContent = content;
-        startX = getClientX(e);
-        currentX = startX;
+        const xy = getClientXY(e);
+        startX = xy.x; startY = xy.y;
+        currentX = startX; currentY = startY;
     }
 
     function handleMove(e) {
         if (!activeRow || !activeContent) return;
-        currentX = getClientX(e);
-        const diff = currentX - startX;
-        applyTransform(activeContent, diff, getActionWidth(activeRow));
+        const xy = getClientXY(e);
+        currentX = xy.x; currentY = xy.y;
+        const diffX = currentX - startX;
+        const diffY = currentY - startY;
+        if (e.cancelable && Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > HORIZONTAL_LOCK_THRESHOLD) {
+            e.preventDefault();
+        }
+        applyTransform(activeContent, diffX, getActionWidth(activeRow));
     }
 
     function handleEnd(e) {
@@ -142,23 +177,19 @@ function setupSwipeOnChatItems() {
         resetTransform(content);
         const actionWidth = getActionWidth(row);
         if (diff < -SWIPE_THRESHOLD) {
-            trackEvent('chat_swipe_left', { conversation_id: row.dataset.conversationId });
+            if (typeof trackEvent === 'function') trackEvent('chat_swipe_left', { conversation_id: row.dataset.conversationId });
             row.dataset.swipeTriggered = '1';
             const convId = parseInt(row.dataset.conversationId, 10);
             setTimeout(() => {
                 if (typeof window.showDeleteChatConfirm === 'function') {
                     window.showDeleteChatConfirm(convId, row);
-                } else {
-                    if (confirm('Удалить этот чат?')) {
-                        if (window.chatModule && typeof window.chatModule.deleteConversation === 'function') {
-                            window.chatModule.deleteConversation(convId);
-                        }
-                    }
-                    delete row.dataset.swipeTriggered;
+                } else if (window.chatModule && typeof window.chatModule.deleteConversation === 'function') {
+                    if (confirm('Удалить этот чат?')) window.chatModule.deleteConversation(convId, false);
                 }
+                delete row.dataset.swipeTriggered;
             }, 0);
         } else if (diff > SWIPE_THRESHOLD) {
-            trackEvent('chat_swipe_right', { conversation_id: row.dataset.conversationId });
+            if (typeof trackEvent === 'function') trackEvent('chat_swipe_right', { conversation_id: row.dataset.conversationId });
         }
     }
 
@@ -168,12 +199,12 @@ function setupSwipeOnChatItems() {
         activeContent = null;
     }
 
-    document.addEventListener('touchstart', handleStart, { passive: true });
-    document.addEventListener('touchmove', handleMove, { passive: true });
+    chatsList.addEventListener('touchstart', handleStart, { passive: true });
+    document.addEventListener('touchmove', handleMove, { passive: false });
     document.addEventListener('touchend', handleEnd, { passive: true });
     document.addEventListener('touchcancel', handleCancel);
 
-    document.addEventListener('mousedown', handleStart);
+    chatsList.addEventListener('mousedown', handleStart);
     document.addEventListener('mousemove', (e) => {
         if (activeRow && e.buttons === 1) handleMove(e);
     });
@@ -187,8 +218,13 @@ function setupSwipeOnMessages() {
     let msgStartX = 0, msgStartY = 0, msgCurrentX = 0, msgCurrentY = 0;
     let swipedMessage = null;
     let swipedBubble = null;
-    const MSG_SWIPE_THRESHOLD = 45;
+    /** Порог (px), после которого считаем жест намеренным горизонтальным свайпом — не трогаем скролл до этого */
+    const MSG_SWIPE_INTENT = 28;
+    /** Порог (px) для срабатывания ответа — выше, чтобы не путать со скроллом */
+    const MSG_SWIPE_THRESHOLD = 58;
     const MSG_SWIPE_MAX = 80;
+    /** Свайп "зафиксирован" как горизонтальный — блокируем скролл только после этого */
+    let swipeIntentCommitted = false;
 
     function resetBubbleTransform() {
         if (swipedBubble) {
@@ -196,6 +232,7 @@ function setupSwipeOnMessages() {
             swipedBubble = null;
         }
         swipedMessage = null;
+        swipeIntentCommitted = false;
     }
 
     function onlyResetVisual() {
@@ -203,6 +240,7 @@ function setupSwipeOnMessages() {
             swipedBubble.style.transform = '';
             swipedBubble = null;
         }
+        swipeIntentCommitted = false;
     }
 
     document.addEventListener('touchstart', (e) => {
@@ -218,6 +256,7 @@ function setupSwipeOnMessages() {
         msgCurrentY = msgStartY;
         swipedMessage = msg;
         swipedBubble = bubble;
+        swipeIntentCommitted = false;
     }, { passive: true });
 
     document.addEventListener('touchmove', (e) => {
@@ -226,25 +265,26 @@ function setupSwipeOnMessages() {
         msgCurrentY = e.touches[0].clientY;
         const diffX = msgCurrentX - msgStartX;
         const diffY = msgCurrentY - msgStartY;
-        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 15) {
+        const absX = Math.abs(diffX);
+        const absY = Math.abs(diffY);
+        if (!swipeIntentCommitted && absX > MSG_SWIPE_INTENT && absX > absY) {
+            swipeIntentCommitted = true;
+        }
+        if (swipeIntentCommitted && absX > absY) {
             e.preventDefault();
         }
-        const isOwn = swipedMessage.classList.contains('own');
-        if (isOwn) {
-            if (diffX < 0) swipedBubble.style.transform = `translateX(${Math.max(-MSG_SWIPE_MAX, diffX)}px)`;
-            else swipedBubble.style.transform = '';
-        } else {
-            if (diffX > 0) swipedBubble.style.transform = `translateX(${Math.min(MSG_SWIPE_MAX, diffX)}px)`;
-            else swipedBubble.style.transform = '';
-        }
+        if (!swipeIntentCommitted) return;
+        // Ответ по свайпу влево для всех сообщений (своих и чужих).
+        if (diffX < 0) swipedBubble.style.transform = `translateX(${Math.max(-MSG_SWIPE_MAX, diffX)}px)`;
+        else swipedBubble.style.transform = '';
     }, { passive: false });
 
     document.addEventListener('touchend', (e) => {
         const msg = swipedMessage;
         const bubble = swipedBubble;
         const diffX = msgCurrentX - msgStartX;
-        const isOwn = msg ? msg.classList.contains('own') : false;
-        const triggered = msg && bubble && (isOwn ? diffX < -MSG_SWIPE_THRESHOLD : diffX > MSG_SWIPE_THRESHOLD);
+        // Свайп влево — ответ на сообщение (для своих и чужих).
+        const triggered = msg && bubble && swipeIntentCommitted && (diffX < -MSG_SWIPE_THRESHOLD);
         if (triggered) {
             trackEvent('message_swipe_reply', { message_id: msg.dataset.messageId });
             const messageData = window.chatModule && typeof window.chatModule.getMessageDataFromElement === 'function'
@@ -258,8 +298,7 @@ function setupSwipeOnMessages() {
     }, { passive: true });
 
     document.addEventListener('touchcancel', () => {
-        onlyResetVisual();
-        swipedMessage = null;
+        resetBubbleTransform();
     });
 }
 

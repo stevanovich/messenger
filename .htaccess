@@ -4,13 +4,13 @@ DirectoryIndex index.php
 
 <IfModule mod_rewrite.c>
 RewriteEngine On
-# Если приложение в подкаталоге (например /sites/messenger/), раскомментируйте и укажите путь:
-# RewriteBase /sites/messenger/
+# Если приложение в подкаталоге — укажите путь. Если в корне сайта — закомментируйте строку ниже.
+RewriteBase /sites/messenger/
 
-# Редирект на index.php если файл не существует
+# Запросы к несуществующим путям (кроме реальных файлов/каталогов) отдаём через index.php
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^api/(.*)$ api/$1 [L]
+RewriteRule ^(.*)$ index.php [L,QSA]
 </IfModule>
 
 # Запрет листинга каталогов (при отсутствии index может давать 403)

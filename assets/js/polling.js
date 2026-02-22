@@ -37,9 +37,10 @@ function setConnectionStatusPolling() {
     if (!el) return;
     // Не перезаписываем, если WebSocket ещё в процессе подключения
     if (el.classList.contains('connection-status--connecting')) return;
-    el.textContent = 'По запросу';
+    const L = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.common) || {};
+    el.textContent = L.polling_label || 'По запросу';
     el.className = 'connection-status connection-status--polling';
-    el.title = 'Обновление по запросу (polling)';
+    el.title = L.polling_title || 'Обновление по запросу (polling)';
     if (typeof window.applyConnectionStatusVisibility === 'function') {
         window.applyConnectionStatusVisibility();
     }
@@ -124,20 +125,18 @@ async function pollMessages() {
                 window.chatModule.markDelivered(conversationId, otherMessageIds);
             }
             
-            // Прокрутка вниз только если пользователь уже внизу
+            // Прокрутка вниз только если пользователь уже внизу (прочтение — по IntersectionObserver при попадании в видимую область)
             const isScrolledToBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 100;
             if (isScrolledToBottom) {
                 chatMessages.scrollTop = chatMessages.scrollHeight;
-                // Пользователь видит новые сообщения — отмечаем как прочитанное
-                const hasOtherUserMessage = newMessages.some(m => m.user_uuid !== currentUserUuid);
-                if (hasOtherUserMessage && window.chatModule?.markConversationAsRead) {
-                    window.chatModule.markConversationAsRead(conversationId);
-                }
             }
             
             // Обновление списка чатов
             if (window.chatModule && typeof window.chatModule.loadConversations === 'function') {
                 window.chatModule.loadConversations();
+            }
+            if (window.chatModule?.updateScrollToBottomButtonVisibility) {
+                window.chatModule.updateScrollToBottomButtonVisibility();
             }
         }
     } catch (error) {
@@ -195,13 +194,6 @@ async function pollReactions() {
                         }
                     });
                 });
-                div.querySelectorAll('.message-reaction-avatar[data-user-uuid]').forEach(avatarEl => {
-                    avatarEl.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        const u = avatarEl.dataset.userUuid;
-                        if (u && typeof openUserProfileModal === 'function') openUserProfileModal(u);
-                    });
-                });
             }
         }
     } catch (error) {
@@ -238,24 +230,57 @@ function createMessageElementSimple(message, currentUserUuid) {
             }
             contentHtml = isVideoMedia(message.file_path, message.file_name)
                 ? `<video src="${escapeHtml(path)}" class="message-sticker-img message-media-video" controls loop muted playsinline></video>`
-                : `<img src="${escapeHtml(path)}" alt="Стикер" class="message-sticker-img">`;
+                : `<img src="${escapeHtml(path)}" alt="${escapeHtml(((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.chat && window.__LANG__.chat.sticker) || 'Стикер'))}" class="message-sticker-img">`;
         } else {
             contentHtml = `<span class="message-sticker-emoji">${escapeHtml(message.content || '')}</span>`;
         }
     } else if (message.type === 'image' && message.file_path) {
-        contentHtml = `<img src="${escapeHtml(message.file_path)}" alt="Изображение" class="message-image">`;
+        contentHtml = `<img src="${escapeHtml(message.file_path)}" alt="${escapeHtml(((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.chat && window.__LANG__.chat.image) || 'Изображение'))}" class="message-image">`;
     } else if (message.type === 'file' && (message.file_name || message.file_path)) {
         const fp = message.file_path || '';
         contentHtml = isVideoMedia(fp, message.file_name)
             ? `<video src="${escapeHtml(fp)}" class="message-media-video" controls loop muted playsinline></video>`
-            : `<a href="${escapeHtml(fp)}" target="_blank">📎 ${escapeHtml(message.file_name || 'Файл')}</a>`;
+            : `<a href="${escapeHtml(fp)}" target="_blank">📎 ${escapeHtml(message.file_name || ((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.chat && window.__LANG__.chat.file) || 'Файл'))}</a>`;
     } else if (message.type === 'call') {
         const callContent = (message.content || '').trim();
-        const escaped = escapeHtml(callContent).replace(/, длительность /g, '<br>длительность ');
+        const L = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.call) || {};
+        let displayText;
+        if (typeof window !== 'undefined' && typeof window.localizeCallMessageContent === 'function') {
+            displayText = window.localizeCallMessageContent(callContent);
+        } else {
+            const durationLabel = L.duration || 'длительность ';
+            const completedLabel = L.completed || 'завершён';
+            const completedForAllLabel = L.completed_for_all || 'завершён для всех';
+            let label = callContent, rest = '';
+            if (/^Групповой видеозвонок/i.test(callContent)) {
+                label = L.group_video || 'Групповой видеозвонок';
+                rest = callContent.replace(/^Групповой видеозвонок\s*,?\s*/i, '');
+            } else if (/^Групповой голосовой звонок/i.test(callContent)) {
+                label = L.group_voice || 'Групповой голосовой звонок';
+                rest = callContent.replace(/^Групповой голосовой звонок\s*,?\s*/i, '');
+            } else if (/^Групповой звонок/i.test(callContent)) {
+                label = L.group_voice || 'Групповой звонок';
+                rest = callContent.replace(/^Групповой звонок\s*,?\s*/i, '');
+            } else if (/^Видеозвонок/i.test(callContent)) {
+                label = L.video || 'Видеозвонок';
+                rest = callContent.replace(/^Видеозвонок\s*,?\s*/i, '');
+            } else if (/^Голосовой звонок/i.test(callContent)) {
+                label = L.voice || 'Голосовой звонок';
+                rest = callContent.replace(/^Голосовой звонок\s*,?\s*/i, '');
+            } else if (/^Звонок/i.test(callContent)) {
+                label = L.voice || 'Звонок';
+                rest = callContent.replace(/^Звонок\s*,?\s*/i, '');
+            }
+            rest = rest.replace(/завершён\s+для\s+всех/gi, completedForAllLabel).replace(/,?\s*длительность\s*/gi, ', ' + durationLabel.trim() + ' ').replace(/завершён/g, completedLabel);
+            displayText = label + (rest ? '\n' + rest : '');
+        }
+        const callVideo = /^(Видеозвонок|Групповой видеозвонок)/i.test(callContent);
+        const escaped = escapeHtml(displayText).replace(/\n/g, '<br>');
         const groupCallId = message.group_call_id;
+        const participantsLabel = L.participants || 'Участники';
         contentHtml = `<span class="message-call-content" data-call-type="${callVideo ? 'video' : 'voice'}">${escaped}</span>`;
         if (groupCallId) {
-            contentHtml += ` <button type="button" class="message-call-participants-link" data-group-call-id="${escapeHtml(String(groupCallId))}">Участники</button>`;
+            contentHtml += ` <button type="button" class="message-call-participants-link" data-group-call-id="${escapeHtml(String(groupCallId))}">${escapeHtml(participantsLabel)}</button>`;
         }
     } else {
         contentHtml = escapeHtml(message.content || '');
@@ -264,7 +289,7 @@ function createMessageElementSimple(message, currentUserUuid) {
     div.innerHTML = `
         <div class="message-bubble">
             ${showUsername ? `<div class="message-header">
-                ${message.user_uuid ? `<button type="button" class="message-username message-username-link" data-user-uuid="${escapeHtml(message.user_uuid)}" title="Открыть профиль">${escapeHtml(message.username)}</button>` : `<span class="message-username">${escapeHtml(message.username)}</span>`}
+                ${message.user_uuid ? `<button type="button" class="message-username message-username-link" data-user-uuid="${escapeHtml(message.user_uuid)}" title="${escapeHtml((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.chat && window.__LANG__.chat.open_profile) || 'Открыть профиль')}">${escapeHtml(message.username)}</button>` : `<span class="message-username">${escapeHtml(message.username)}</span>`}
             </div>` : ''}
             <div>${contentHtml}</div>
             <div class="message-time">${formatMessageTime(message.created_at)}</div>

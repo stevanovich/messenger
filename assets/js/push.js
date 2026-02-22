@@ -20,14 +20,15 @@
 
     /** Возвращает причину, по которой push не поддерживается (для подсказки пользователю). */
     function getUnsupportedReason() {
+        var P = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push) || {};
         if (!window.isSecureContext) {
-            return 'Уведомления работают только по HTTPS (или на localhost). Откройте сайт по защищённому соединению.';
+            return P.https_only || 'Уведомления работают только по HTTPS (или на localhost). Откройте сайт по защищённому соединению.';
         }
         if (!('Notification' in window)) {
-            return 'Браузер не поддерживает уведомления (Notification API).';
+            return P.no_notification_api || 'Браузер не поддерживает уведомления (Notification API).';
         }
         if (!('serviceWorker' in navigator)) {
-            return 'Браузер не поддерживает Service Worker. Обновите браузер или используйте Chrome, Firefox, Edge.';
+            return P.no_service_worker || 'Браузер не поддерживает Service Worker. Обновите браузер или используйте Chrome, Firefox, Edge.';
         }
         return null;
     }
@@ -57,25 +58,25 @@
             if (text && text.trim().startsWith('{')) data = JSON.parse(text);
         } catch (_) {}
         if (!data && !res.ok) {
-            if (res.status === 503) throw new Error('Push-уведомления не настроены на сервере. Задайте VAPID-ключи в config (см. план).');
-            throw new Error('Ответ сервера не в формате JSON. Проверьте настройки.');
+            if (res.status === 503) throw new Error((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push && window.__LANG__.push.not_configured) || 'Push-уведомления не настроены на сервере. Задайте VAPID-ключи в config (см. план).');
+            throw new Error((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push && window.__LANG__.push.not_json) || 'Ответ сервера не в формате JSON. Проверьте настройки.');
         }
         return { res, data: data || {} };
     }
 
     async function getPublicKey() {
         const { res, data } = await fetchJson(PUSH_API);
-        if (!res.ok) throw new Error((data && data.error) || 'Ошибка');
+        if (!res.ok) throw new Error((data && data.error) || ((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.common && window.__LANG__.common.error) || 'Ошибка'));
         const key = (data.data && data.data.public_key) ? data.data.public_key : (data.public_key || '');
-        if (!key) throw new Error('Push не настроен на сервере (нет публичного ключа).');
+        if (!key) throw new Error((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push && window.__LANG__.push.not_configured_key) || 'Push не настроен на сервере (нет публичного ключа).');
         return key;
     }
 
     async function enableNotifications() {
-        if (!isSupported()) return { ok: false, error: 'Не поддерживается' };
+        if (!isSupported()) return { ok: false, error: (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push && window.__LANG__.push.unsupported) || 'Не поддерживается' };
         try {
             const permission = await Notification.requestPermission();
-            if (permission !== 'granted') return { ok: false, error: 'Разрешение не дано' };
+            if (permission !== 'granted') return { ok: false, error: (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push && window.__LANG__.push.permission_denied) || 'Разрешение не дано' };
             await getRegistration();
             const reg = await navigator.serviceWorker.ready;
             await reg.update();
@@ -92,13 +93,13 @@
                 }
             };
             const { res, data } = await fetchJson(PUSH_API, { method: 'POST', body: JSON.stringify(body) });
-            if (!res.ok) throw new Error((data && data.error) || 'Ошибка сохранения подписки');
+            if (!res.ok) throw new Error((data && data.error) || ((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push && window.__LANG__.push.save_error) || 'Ошибка сохранения подписки'));
             return { ok: true };
         } catch (e) {
-            var msg = e.message || 'Ошибка';
+            var msg = e.message || ((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.common && window.__LANG__.common.error) || 'Ошибка');
             var isEdgeBlock = e.name === 'AbortError' || (msg && (msg.indexOf('push service error') !== -1 || msg.indexOf('Registration failed') !== -1));
             if (isEdgeBlock) {
-                msg = 'Браузер заблокировал подписку. В Edge: Настройки → Конфиденциальность → Предотвращение отслеживания → добавьте этот сайт в исключения.';
+                msg = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push && window.__LANG__.push.blocked_message) || 'Браузер заблокировал подписку. В Edge: Настройки → Конфиденциальность → Предотвращение отслеживания → добавьте этот сайт в исключения.';
                 console.warn('Push: ' + msg, e);
             } else {
                 console.error('Push enable error:', e);
@@ -173,16 +174,17 @@
         if (!status.supported) {
             if (label) label.classList.add('disabled');
             if (toggle) { toggle.checked = false; toggle.disabled = true; }
-            if (statusEl) statusEl.textContent = typeof getUnsupportedReason === 'function' ? getUnsupportedReason() : 'Не поддерживается в этом браузере';
+            if (statusEl) statusEl.textContent = typeof getUnsupportedReason === 'function' ? getUnsupportedReason() : ((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.push && window.__LANG__.push.unsupported_browser) || 'Не поддерживается в этом браузере');
             return;
         }
         if (label) label.classList.remove('disabled');
         if (toggle) toggle.disabled = false;
         if (toggle) toggle.checked = status.subscribed;
         if (statusEl) {
-            if (status.subscribed) statusEl.textContent = 'Включены';
-            else if (status.permission === 'denied') statusEl.textContent = 'Разрешите уведомления в настройках браузера';
-            else statusEl.textContent = 'Выключены';
+            var L = (typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.notifications) || {};
+            if (status.subscribed) statusEl.textContent = L.on || 'Включены';
+            else if (status.permission === 'denied') statusEl.textContent = L.denied || ((typeof window !== 'undefined' && window.__LANG__ && window.__LANG__.notifications && window.__LANG__.notifications.denied) || 'Разрешите уведомления в настройках браузера');
+            else statusEl.textContent = L.off || 'Выключены';
         }
     }
 

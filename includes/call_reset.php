@@ -11,6 +11,16 @@
  * ]
  * @return array ['call_logs_count' => int, 'group_calls_count' => int, 'error' => string|null]
  */
+if (!function_exists('t')) {
+    require_once __DIR__ . '/locale.php';
+    if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE && function_exists('isLoggedIn') && isLoggedIn()) {
+        initLocale();
+    } else {
+        $GLOBALS['_current_locale'] = 'en';
+        $GLOBALS['_locale_strings'] = include __DIR__ . '/../locale/en.php';
+    }
+}
+
 function resetActiveCalls(array $options = []) {
     global $pdo;
     $userUuids = isset($options['user_uuids']) && is_array($options['user_uuids'])
@@ -18,7 +28,8 @@ function resetActiveCalls(array $options = []) {
         : [];
     $dryRun = !empty($options['dry_run']);
     $sendWs = !empty($options['send_ws']);
-    $source = (isset($options['source']) && $options['source'] === 'script') ? 'скриптом' : 'из админки';
+    $sourceKey = (isset($options['source']) && $options['source'] === 'script') ? 'call.reset_script' : 'call.reset_admin';
+    $sourceLabel = function_exists('t') ? t($sourceKey) : ((isset($options['source']) && $options['source'] === 'script') ? 'скриптом' : 'из админки');
 
     $result = ['call_logs_count' => 0, 'group_calls_count' => 0, 'error' => null];
 
@@ -84,7 +95,8 @@ function resetActiveCalls(array $options = []) {
             $stmt->execute(array_merge([$now, $now], $ids));
 
             foreach ($activeCalls as $c) {
-                $content = ($c['with_video'] ? 'Видеозвонок' : 'Звонок') . ' завершён (сброс ' . $source . ')';
+                $label = ($c['with_video'] ? (function_exists('t') ? t('call.video') : 'Видеозвонок') : (function_exists('t') ? t('call.voice') : 'Звонок'));
+                $content = $label . ' ' . (function_exists('t') ? t('call.completed') : 'завершён') . ' (' . $sourceLabel . ')';
                 $stmt = $pdo->prepare("
                     INSERT INTO messages (conversation_id, user_uuid, content, type)
                     VALUES (?, NULL, ?, 'call')
@@ -114,11 +126,11 @@ function resetActiveCalls(array $options = []) {
 
             foreach ($activeGroupCalls as $g) {
                 $durationSec = max(0, time() - strtotime($g['started_at']));
-                $label = $g['with_video'] ? 'Групповой видеозвонок' : 'Групповой звонок';
+                $label = $g['with_video'] ? (function_exists('t') ? t('call.group_video') : 'Групповой видеозвонок') : (function_exists('t') ? t('call.group_voice') : 'Групповой звонок');
                 $mins = floor($durationSec / 60);
                 $secs = $durationSec % 60;
-                $durationText = $mins > 0 ? $mins . ' мин' : $secs . ' сек';
-                $content = $label . ' завершён (сброс из админки), длительность ' . $durationText;
+                $durationText = $mins > 0 ? $mins . ' ' . (function_exists('t') ? t('call.duration_min') : 'мин') : $secs . ' ' . (function_exists('t') ? t('call.duration_sec') : 'сек');
+                $content = $label . ' ' . (function_exists('t') ? t('call.completed') : 'завершён') . ' (' . (function_exists('t') ? t('call.reset_admin') : 'сброс из админки') . '), ' . (function_exists('t') ? t('call.duration') : 'длительность ') . $durationText;
                 $stmt = $pdo->prepare("
                     INSERT INTO messages (conversation_id, user_uuid, content, type, group_call_id)
                     VALUES (?, NULL, ?, 'call', ?)
